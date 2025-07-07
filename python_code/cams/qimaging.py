@@ -38,7 +38,7 @@ class QImagingCam(GenericCam):
     def _init_framebuffer(self):
         ReleaseDriver()
         LoadDriver()
-        self.cam = OpenCamera(ListCameras()[cam_id])
+        self.cam = OpenCamera(ListCameras()[self.cam_id])
         self.set_cam_settings()
         self.cam.StartStreaming()
         frame = self.cam.GrabFrame()
