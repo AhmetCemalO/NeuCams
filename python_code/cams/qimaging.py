@@ -2,6 +2,7 @@
 QImaging cameras
 """
 
+from multiprocessing import Event
 from .generic_cam import GenericCam
 try:
     from .qimaging_dll import *

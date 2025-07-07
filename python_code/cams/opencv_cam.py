@@ -1,6 +1,7 @@
 import time
 import cv2
 import numpy as np
+from multiprocessing import Event
 from .generic_cam import GenericCam
 from ..utils import display
 
