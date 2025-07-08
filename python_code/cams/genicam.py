@@ -65,17 +65,17 @@ class GenICam(GenericCam):
         """To be checked before trying to open"""
         ids, devices = GenI_get_cam_ids(self.h)
         if len(devices) == 0:
-            display('No GenICam cams detected, check connections.')
+            display('No GenICam cams detected, check connections.', level='error')
             return False
-        display(f'GenICam cams detected: {devices}')
+        display(f'GenICam cams detected: {devices}', level='info')
         if self.cam_id in ids:
-            display(f'Requested GenICam cam detected {self.cam_id}.')
+            display(f'Requested GenICam cam detected {self.cam_id}.', level='info')
             return True
-        display(f'Requested GenICam cam not detected {self.cam_id}, check connections.')
+        display(f'Requested GenICam cam not detected {self.cam_id}, check connections.', level='error')
         return False
         
     def __enter__(self):
-        self.cam_handle = self.h.create_image_acquirer(self.cam_id)
+        self.cam_handle = self.h.create(self.cam_id)
         self.cam_handle.__enter__()
         self.cam_handle.num_buffers = 2
         self.features = self.cam_handle.remote_device.node_map
@@ -128,7 +128,7 @@ class GenICam(GenericCam):
         idx = 0
         while (n_frames is None) or idx < n_frames:
             try:
-                with self.cam_handle.fetch_buffer(timeout = timeout_ms) as buffer:
+                with self.cam_handle.fetch(timeout = timeout_ms) as buffer:
                     payload = buffer.payload
                     timestamp = buffer.timestamp
                     component = payload.components[0]
@@ -141,14 +141,14 @@ class GenICam(GenericCam):
             idx += 1
             
     def _record(self):
-        self.cam_handle.start_acquisition(run_in_background = True)
+        self.cam_handle.start() # it was self.cam_handle.start(run_in_background = True)
         limit = self.params['n_frames'] if self.params['acquisition_mode'] == "MultiFrame" else None
         self.t_start = time.time()
         self.frame_generator = self.get_frame_generator(n_frames = limit, timeout_ms = self.timeout/1000)
         self.is_recording = True
         
     def stop(self):
-        self.cam_handle.stop_acquisition()
+        self.cam_handle.stop()
         self.is_recording = False
         
     def image(self):

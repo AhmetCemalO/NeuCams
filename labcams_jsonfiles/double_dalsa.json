@@ -4,6 +4,8 @@
             "description": "dalsa1",
             "type": "genicam",
             "name": "Nano-M1930(00:01:0D:C6:88:10)",
+            "driver": "genicam",
+            "id": 0,
             "params": {
                 "exposure": 1500,
 				"frame_rate": 30,
@@ -12,7 +14,7 @@
 				"binning": 1,
 				"trigger_mode": "Off",
 				"trigger_source": "Line1"
-            },
+        
             "recorder_params": {
                 "recorder": "opencv",
                 "folder": "test"
@@ -22,6 +24,8 @@
             "description": "dalsa2",
             "type": "genicam",
             "name": "Nano-M1930(00:01:0D:C6:88:18)",
+            "driver": "genicam",
+            "id": 1,
             "params": {
                 "exposure": 1500,
 				"frame_rate": 30,

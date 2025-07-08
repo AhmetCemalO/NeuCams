@@ -4,6 +4,7 @@
             "description": "dalsa",
             "type": "genicam",
             "name": "Nano-M1930(00:01:0D:C6:87:6D)",
+            "driver": "genicam",
             "params": {
                 "exposure": 1500,
 				"frame_rate": 30,

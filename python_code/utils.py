@@ -4,9 +4,16 @@ from datetime import datetime
 import json
 import time
 
-def display(msg):
-    sys.stdout.write('['+datetime.today().strftime('%y-%m-%d %H:%M:%S')+'] - ' + msg + '\n')
-    sys.stdout.flush()
+def display(msg, level='info'):
+    """
+    Print messages to stdout. Only prints info-level messages if LABCAMS_VERBOSE is set in builtins.
+    Warnings and errors are always printed.
+    """
+    import builtins
+    verbose = getattr(builtins, 'LABCAMS_VERBOSE', False)
+    if verbose or level in ['warning', 'error']:
+        sys.stdout.write('['+datetime.today().strftime('%y-%m-%d %H:%M:%S')+'] - ' + msg + '\n')
+        sys.stdout.flush()
 
 DEFAULT_SERVER_PARAMS = {
                          'server': 'udp',

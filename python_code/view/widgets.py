@@ -18,6 +18,8 @@ from camera_handler import CameraHandler
 dirpath = dirname(path.realpath(__file__))
 
 class PyCamsWindow(QMainWindow):
+    _udp_server_created = False
+
     def __init__(self, preferences = None):
         self.preferences = preferences if preferences is not None else {}
         
@@ -32,14 +34,16 @@ class PyCamsWindow(QMainWindow):
             if cam['driver'] in ['avt', 'pco', 'genicam']:
                 self.setup_camera(cam)
         
+        # Only create the UDP server once, not per camera
         server_params = self.preferences.get('server_params', None)
-        if server_params is not None:
+        if server_params is not None and not hasattr(PyCamsWindow, '_udp_server_created'):
             server = server_params.get('server', None)
             if server == "udp":
                 self.server = UDPSocket((server_params.get('server_ip', '0.0.0.0'), server_params.get('server_port', 9999)))
                 self._timer = QTimer(self)
                 self._timer.timeout.connect(self.process_server_messages)
                 self._timer.start(server_params.get('server_refresh_time', 100))
+                PyCamsWindow._udp_server_created = True  # Mark as created
         
         self.mdiArea.setActivationOrder(1)
         
