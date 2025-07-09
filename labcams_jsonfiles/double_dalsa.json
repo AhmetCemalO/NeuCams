@@ -2,9 +2,9 @@
     "cams": [
 		{
             "description": "dalsa1",
-            "type": "genicam",
+            "type": "pco",
             "name": "Nano-M1930(00:01:0D:C6:88:10)",
-            "driver": "genicam",
+            "driver": "pco",
             "id": 0,
             "params": {
                 "exposure": 1500,
@@ -14,7 +14,7 @@
 				"binning": 1,
 				"trigger_mode": "Off",
 				"trigger_source": "Line1"
-        
+            },
             "recorder_params": {
                 "recorder": "opencv",
                 "folder": "test"

@@ -5,11 +5,14 @@ import ctypes
 import time
 import datetime
 from os.path import dirname, join
-from cams.avt_cam import AVTCam
-from cams.pco_cam import PCOCam
-from cams.genicam import GenICam
 from file_writer import BinaryWriter, TiffWriter, FFMPEGWriter, OpenCVWriter
 from utils import display
+from importlib import import_module
+
+# Remove static imports of camera drivers
+# from cams.avt_cam import AVTCam
+# from cams.pco_cam import PCOCam
+# from cams.genicam import GenICam
 
 def clear_queue(my_queue):
     while True:
@@ -17,7 +20,24 @@ def clear_queue(my_queue):
             my_queue.get_nowait()
         except queue.Empty:
             break
-                
+
+class CameraFactory:
+    cameras = {
+        'avt': ('cams.avt_cam', 'AVTCam'),
+        'pco': ('cams.pco_cam', 'PCOCam'),
+        'genicam': ('cams.genicam', 'GenICam'),
+        # Add more drivers here as needed
+    }
+
+    @staticmethod
+    def get_camera(driver, cam_id=None, params=None):
+        if driver not in CameraFactory.cameras:
+            raise ValueError(f"Unknown camera driver: {driver}")
+        module_name, class_name = CameraFactory.cameras[driver]
+        module = import_module(module_name, package='python_code')
+        cam_class = getattr(module, class_name)
+        return cam_class(cam_id=cam_id, params=params)
+
 class CameraHandler(Process):
     
     def __init__(self, cam_dict, writer_dict):
@@ -55,6 +75,8 @@ class CameraHandler(Process):
         
         cam = self._open_cam()
         self.camera_connected = cam.is_connected()
+        if not self.camera_connected:
+            display(f"Camera '{self.cam_dict.get('description', 'unknown')}' (name: '{self.cam_dict.get('name', 'unknown')}') not found or not connected. Please check the connection and close other processes which use the camera.", level='error')
         cam.close()
         
         if self.camera_connected:
@@ -160,10 +182,11 @@ class CameraHandler(Process):
     def _open_cam(self):
         cam_dict_copy = self.cam_dict.copy()
         cam_type = cam_dict_copy.pop('driver', 'avt').lower()
-        cameras = {'avt': AVTCam, 'pco': PCOCam, 'genicam': GenICam} 
-        camera = cameras[cam_type]
-        return camera(cam_id = cam_dict_copy.get('id', None),
-                      params = cam_dict_copy.get('params', None))
+        return CameraFactory.get_camera(
+            cam_type,
+            cam_id=cam_dict_copy.get('id', None),
+            params=cam_dict_copy.get('params', None)
+        )
     
     def get_image(self):
         return self.img

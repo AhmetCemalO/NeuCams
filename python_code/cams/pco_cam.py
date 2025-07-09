@@ -43,17 +43,24 @@ class PCOCam(GenericCam):
         self.format = {**default_format, **self.format}
     
     def is_connected(self):
-        """To be checked before trying to open"""
+        cam_name = getattr(self, 'name', self.params.get('name', 'unknown')) if hasattr(self, 'params') else getattr(self, 'name', 'unknown')
+        if pco is None:
+            display(f"PCO library not available for camera '{cam_name}'.", level='error')
+            return False
         try:
             cam = pco.Camera()
             cam.close()
-            display('PCO cam detected.')
+            display(f"PCO cam detected for '{cam_name}'.")
             return True
-        except ValueError:
-            display('PCO cam not detected.')
+        except Exception:
+            display(f"PCO cam not detected for '{cam_name}'.", level='error')
             return False
         
     def __enter__(self):
+        if pco is None:
+            display('PCO library not available. Cannot open camera.', level='error')
+            self.cam_handle = None
+            return self
         self.cam_handle = pco.Camera()
         self.cam_handle.__enter__()
         self.apply_params()
@@ -63,51 +70,55 @@ class PCOCam(GenericCam):
         
     def __exit__(self, exc_type, exc_value, exc_traceback):
         self.stop()
-        self.cam_handle.__exit__(exc_type, exc_value, exc_traceback)
+        if hasattr(self, 'cam_handle') and self.cam_handle is not None:
+            self.cam_handle.__exit__(exc_type, exc_value, exc_traceback)
+            display('PCO cam exited.')
+        else:
+            display('PCO cam __exit__ called, but camera was never opened.', level='warning')
         return True
         
     def close(self):
-        self.cam_handle.close()
+        if hasattr(self, 'cam_handle') and self.cam_handle is not None:
+            self.cam_handle.close()
+            display('PCO cam closed.')
+        else:
+            display('PCO cam close() called, but camera was never opened.', level='warning')
 
     def apply_params(self):
-        # PCO can't modify configuration while recording, need to stop/resume
+        if not hasattr(self, 'cam_handle') or self.cam_handle is None:
+            display('PCO cam apply_params() called, but camera was never opened.', level='warning')
+            return
         resume_recording = self.is_recording
         if self.is_recording:
             self.stop()
-            # self.cam_handle.default_configuration()
-            # if self.cam_handle.rec.recorder_handle.value is not None:
-                # try:
-                    # self.cam_handle.rec.stop_record()
-                # except self.cam_handle.rec.exception as exc:
-                    # pass
-
-            # if self.cam_handle.rec.recorder_handle.value is not None:
-                # try:
-                    # self.cam_handle.rec.delete()
-                # except self.cam_handle.rec.exception as exc:
-                    # pass
-        
         adjusted_params = self.params.copy()
-        
         adjusted_params['exposure time'] = adjusted_params.pop('exposure')/1_000_000
         adjusted_params['trigger'] = adjusted_params['triggerSource'] if self.params['triggered'] else 'auto sequence'
         adjusted_params['binning'] = (adjusted_params['binning'],adjusted_params['binning'])
-        
         self.cam_handle.configuration = adjusted_params
         display(f'PCO - configuration: {self.cam_handle.configuration}')
-        
         if resume_recording:
             self._record()
-        
+
     def _record(self):
+        if not hasattr(self, 'cam_handle') or self.cam_handle is None:
+            display('PCO cam _record() called, but camera was never opened.', level='warning')
+            return
         self.cam_handle.record(number_of_images = 10, mode = 'fifo')
         self.is_recording = True
 
     def stop(self):
-        self.cam_handle.stop()
-        self.is_recording = False
+        if hasattr(self, 'cam_handle') and self.cam_handle is not None:
+            self.cam_handle.stop()
+            self.is_recording = False
+            display('PCO cam stopped.')
+        else:
+            display('PCO cam stop() called, but camera was never opened.', level='warning')
 
     def get_health_status(self):
+        if not hasattr(self, 'cam_handle') or self.cam_handle is None:
+            display('PCO cam get_health_status() called, but camera was never opened.', level='warning')
+            return 0
         ret = self.cam_handle.sdk.get_camera_health_status()
         if 'status' in ret:
             display(f"PCO - Camera health status: {ret['status']}")
@@ -119,6 +130,9 @@ class PCOCam(GenericCam):
         return 0
 
     def image(self):
+        if not hasattr(self, 'cam_handle') or self.cam_handle is None:
+            display('PCO cam image() called, but camera was never opened.', level='warning')
+            return None, 'not recording'
         self.cam_handle.wait_for_first_image()
         frame, meta = self.cam_handle.image()
         return frame, (meta['camera image number'], time.time())
