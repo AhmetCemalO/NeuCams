@@ -30,7 +30,8 @@ def GenI_get_cam_ids(harvester = None):
         harvester = Harvester()
         harvester.add_file(get_gentl_producer_path())
         harvester.update()
-    cam_ids = [i for i in range(len(harvester.device_info_list))]
+    # Use serial_number as unique ID
+    cam_ids = [getattr(dev, 'serial_number', None) for dev in harvester.device_info_list]
     cam_infos = harvester.device_info_list
     if manage_harvester:
         harvester.reset()
@@ -47,7 +48,8 @@ class GenICam(GenericCam):
             self.h.update()
         if cam_id is None and self.h is not None:
             if len(self.h.device_info_list) > 0:
-                cam_id = 0
+                # Default to first serial number
+                cam_id = getattr(self.h.device_info_list[0], 'serial_number', None)
         super().__init__(name = 'GenICam', cam_id = cam_id, params = params, format = format)
         default_params = {'exposure':29000, 'frame_rate':30,'gain':8, 'gain_auto': False, 'acquisition_mode': 'Continuous', 'n_frames': 1, 'triggered': False}
         self.exposed_params = ['frame_rate', 'gain', 'exposure', 'gain_auto', 'triggered', 'acquisition_mode', 'n_frames']
@@ -76,7 +78,18 @@ class GenICam(GenericCam):
             display('Harvester library not available. Cannot open GenICam camera.', level='error')
             self.cam_handle = None
             return self
-        self.cam_handle = self.h.create(self.cam_id)
+        # Find the index of the device with the matching serial_number
+        ids, devices = GenI_get_cam_ids(self.h)
+        cam_index = None
+        for idx, dev in enumerate(devices):
+            if getattr(dev, 'serial_number', None) == self.cam_id:
+                cam_index = idx
+                break
+        if cam_index is None:
+            display(f"Could not find camera with serial_number {self.cam_id}", level='error')
+            self.cam_handle = None
+            return self
+        self.cam_handle = self.h.create(cam_index)
         self.cam_handle.__enter__()
         self.cam_handle.num_buffers = 2
         self.features = self.cam_handle.remote_device.node_map

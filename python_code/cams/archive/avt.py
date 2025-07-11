@@ -8,6 +8,21 @@ from pymba import *
 from .generic_cam import GenericCam
 from ..utils import display
 
+def debug_pickle(obj, prefix=''):
+    import pickle, collections.abc
+    try:
+        pickle.dumps(obj)
+        print(prefix, '✅ picklable', type(obj))
+    except Exception as e:
+        print(prefix, '❌ NOT picklable', type(obj), '→', e)
+        if isinstance(obj, (list, tuple, set)):
+            for i, item in enumerate(obj):
+                debug_pickle(item, prefix + f'  [{i}] ')
+        elif isinstance(obj, dict):
+            for k, v in obj.items():
+                debug_pickle(k, prefix + '  {key} ')
+                debug_pickle(obj[k], prefix + f'  {k}: ')
+
 def AVT_get_ids():
     with Vimba() as vimba:
         cam_ids = vimba.camera_ids()
@@ -78,11 +93,13 @@ class AVTCam(GenericCam):
             self.w = frame.width
             self.dtype = np.uint8
             self._init_variables(dtype = self.dtype)
-            framedata = np.ndarray(buffer = frame.getBufferByteData(),
-                                   dtype = self.dtype,
-                                   shape = (frame.height,
-                                            frame.width)).copy()
-            self.img[:] = np.reshape(framedata,self.img.shape)[:]
+            # ─── NEW ───  (detach via bytes → NumPy)
+            buf       = bytes(frame.getBufferByteData())           # 1st copy
+            frame_np  = np.frombuffer(buf, dtype=self.dtype)     # NumPy sees plain bytes
+            frame_np  = frame_np.reshape(frame.height, frame.width)  # keep same shape
+            frame_np  = frame_np.copy()
+
+            self.img[:] = frame_np[:]
             display("AVT [{1}] = Got info from camera (name: {0})".format(
                 self.cam.DeviceModelName,self.cam_id))
             self.cam.endCapture()
@@ -212,15 +229,13 @@ class AVTCam(GenericCam):
             f = self.frames[ibuf]
             avterr = f.waitFrameCapture(timeout = self.frameTimeout)
             if avterr == 0:
-                timestamp = f._frame.timestamp/self.tickfreq
-                frameID = f._frame.frameID
+                timestamp = float(f._frame.timestamp)/self.tickfreq
+                frameID = int(f._frame.frameID)
                 #print('Frame id:{0}'.format(frameID))
                 if not frameID in self.recorded_frames:
                     self.recorded_frames.append(frameID)
-                    frame = np.ndarray(buffer = f.getBufferByteData(),
-                                       dtype = self.dtype,
-                                       shape = (f.height,
-                                                f.width)).copy()
+                    buf = f.getBufferByteData()
+                    frame = np.frombuffer(bytes(buf), dtype=self.dtype).reshape((f.height, f.width))
                     #display("Time {0} - {1}:".format(str(1./(time.time()-tstart)),self.nframes.value))
                     #tstart = time.time()
                     try:
@@ -235,47 +250,57 @@ class AVTCam(GenericCam):
                 return False, None,(None,None)
 
     def _cam_close(self):
+        # Stop acquisition on the camera
         self.cam.runFeatureCommand('AcquisitionStop')
-        display('[AVT] - Stopped acquisition.')
-        # Check if all frames are done...
+        display('[AVT]  Stopped acquisition.')
+
+        # Drain any frames still in the buffers
         for ibuf in range(self.nbuffers):
-            f = self.frames[ibuf]
+            frm = self.frames[ibuf]
             try:
-                f.waitFrameCapture(timeout = self.frame_timeout)
-                timestamp = f._frame.timestamp/self.tickfreq
-                frameID = f._frame.frameID
-                frame = np.ndarray(buffer = f.getBufferByteData(),
-                                   dtype = self.dtype,
-                                   shape = (f.height,
-                                            f.width)).copy()
+                frm.waitFrameCapture(timeout=self.frame_timeout)
+
+                # Native Python types for metadata
+                timestamp = float(frm._frame.timestamp) / self.tickfreq
+                frameID   = int(frm._frame.frameID)
+
+                # --- detach buffer via bytes() then NumPy ---
+                buf       = bytes(frm.getBufferByteData())          # copy #1
+                frame_np  = np.frombuffer(buf, dtype=self.dtype)    # plain buffer
+                frame_np  = frame_np.reshape(frm.height, frm.width) # same shape
+                # ------------------------------------------------
+
                 if self.saving.is_set():
                     self.was_saving = True
-                    if not frameID in self.lastframeid :
-                        self.queue.put((frame.copy(),(frameID,timestamp)))
+                    if frameID not in self.lastframeid:
+                        self.queue.put((frame_np.copy(), (frameID, timestamp)))
                 elif self.was_saving:
                     self.was_saving = False
                     self.queue.put(['STOP'])
 
                 self.lastframeid[ibuf] = frameID
-                self.nframes.value = frameID
-                self.frame = frame
-            except VimbaException as err:
-                #display('VimbaException: ' + str(err))
+                self.nframes.value     = frameID
+                self.frame             = frame_np
+
+            except VimbaException:
+                # ignore timeouts or revoke errors on shutdown
                 pass
-        display('{4} delivered:{0},dropped:{1},queued:{4},time:{2}'.format(
-            self.cam.StatFrameDelivered,
-            self.cam.StatFrameDropped,
-            self.cam.StatTimeElapsed,
-            self.cam.DeviceModelName,
-            self.nframes.value))
+
+        display(
+            f'{self.cam.DeviceModelName} delivered:{self.cam.StatFrameDelivered}, '
+            f'dropped:{self.cam.StatFrameDropped}, queued:{self.nframes.value}, '
+            f'time:{self.cam.StatTimeElapsed}'
+        )
+
+        # Clean up SDK resources
         self.cam.runFeatureCommand('AcquisitionStop')
         self.cam.endCapture()
         try:
             self.cam.revokeAllFrames()
-        except:
+        except Exception:
             display('Failed to revoke frames.')
+
         self.cam.closeCamera()
-        display('AVT [{0}] - Close event: {1}'.format(
-            self.cam_id,
-            self.close_event.is_set()))
+        display(f'AVT [{self.cam_id}]  Close event: {self.close_event.is_set()}')
         self.vimba.shutdown()
+

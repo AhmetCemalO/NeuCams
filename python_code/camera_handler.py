@@ -6,11 +6,9 @@ import time
 import datetime
 from os.path import dirname, join
 from file_writer import BinaryWriter, TiffWriter, FFMPEGWriter, OpenCVWriter
-from utils import display
+from utils import display, resolve_cam_id_by_serial
 from importlib import import_module
-
-# Remove static imports of camera drivers
-# from cams.avt_cam import AVTCam
+from cams.avt_cam import AVTCam
 # from cams.pco_cam import PCOCam
 # from cams.genicam import GenICam
 
@@ -130,9 +128,22 @@ class CameraHandler(Process):
                     while not self.stop_trigger.is_set():
                         self._process_queues()
                         frame, metadata = cam.image()
+                        # Handle shared memory tuple from AVT
+                        if isinstance(frame, tuple) and len(frame) == 3 and isinstance(frame[0], str):
+                            shm_name, shape, dtype = frame
+                            frame, shm = AVTCam.frame_from_shm(shm_name, shape, dtype)
+                            frame = np.array(frame, copy=True)
+                            shm.close()
+                            shm.unlink()
+                        #print("FRAME TYPE: ", type(frame), flush=True)
                         # print(metadata, flush=True)
                         if frame is not None:
                             if self.saving.is_set():
+                                import numpy as np
+                                if isinstance(frame, np.ndarray):
+                                    print("QUEUE DEBUG: type=", type(frame), "base=", frame.base, "shape=", frame.shape)
+                                else:
+                                    print("QUEUE DEBUG: type=", type(frame))
                                 writer.save(frame, metadata)
                             self._update(frame,metadata)
                         elif metadata == "stop":
@@ -182,9 +193,15 @@ class CameraHandler(Process):
     def _open_cam(self):
         cam_dict_copy = self.cam_dict.copy()
         cam_type = cam_dict_copy.pop('driver', 'avt').lower()
+        serial_number = cam_dict_copy.get('serial_number', None)
+        # Prefer serial_number, fallback to id
+        if serial_number is not None:
+            cam_id = resolve_cam_id_by_serial(cam_type, serial_number)
+        else:
+            cam_id = cam_dict_copy.get('id', None)
         return CameraFactory.get_camera(
             cam_type,
-            cam_id=cam_dict_copy.get('id', None),
+            cam_id=cam_id,
             params=cam_dict_copy.get('params', None)
         )
     

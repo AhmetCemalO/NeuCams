@@ -11,8 +11,25 @@ from tifffile import imread, TiffFile, TiffWriter as twriter
 from skvideo.io import FFmpegWriter
 import cv2
 from utils import display
+from cams.avt_cam import AVTCam
+from multiprocessing import shared_memory
 
 VERSION = 'B0.6'
+
+def debug_pickle(obj, prefix=''):
+    import pickle, collections.abc
+    try:
+        pickle.dumps(obj)
+        print(prefix, '✅ picklable', type(obj))
+    except Exception as e:
+        print(prefix, '❌ NOT picklable', type(obj), '→', e)
+        if isinstance(obj, (list, tuple, set)):
+            for i, item in enumerate(obj):
+                debug_pickle(item, prefix + f'  [{i}] ')
+        elif isinstance(obj, dict):
+            for k, v in obj.items():
+                debug_pickle(k, prefix + '  {key} ')
+                debug_pickle(obj[k], prefix + f'  {k}: ')
 
 class FileWriter(Process):
     """Abstract class to write to file(s)
@@ -116,6 +133,13 @@ class FileWriter(Process):
 
     def save(self,frame,metadata):
         try:
+            # QUEUE DEBUG
+            import numpy as np
+            if isinstance(frame, np.ndarray):
+                print("QUEUE DEBUG: type=", type(frame), "base=", frame.base, "shape=", frame.shape)
+            else:
+                print("QUEUE DEBUG: type=", type(frame))
+            debug_pickle((frame,metadata), 'QUEUE PAYLOAD')
             self.inQ.put((frame,metadata), timeout = self.queue_timeout)
         except queue.Full:
             print("ERROR: could not save image, queue is full")
@@ -152,13 +176,29 @@ class FileWriter(Process):
     def _handle_frame(self, buff):
         # print(buff, flush=True)
         frame, metadata = buff
-        if (self.file_handler is None or
-            (self.frames_per_file > 0 and np.mod(self.saved_frame_count,
-                                               self.frames_per_file)==0)):
-            self._init_file_handler(frame)
-        frameid, timestamp = metadata[:2] 
-        self._write(frame,frameid,timestamp)
-        self.saved_frame_count += 1
+        # Handle shared memory tuple from AVT
+        if isinstance(frame, tuple) and len(frame) == 3 and isinstance(frame[0], str):
+            shm_name, shape, dtype = frame
+            frame, shm = AVTCam.frame_from_shm(shm_name, shape, dtype)
+            try:
+                if (self.file_handler is None or
+                    (self.frames_per_file > 0 and np.mod(self.saved_frame_count,
+                                                       self.frames_per_file)==0)):
+                    self._init_file_handler(frame)
+                frameid, timestamp = metadata[:2]
+                self._write(frame, frameid, timestamp)
+                self.saved_frame_count += 1
+            finally:
+                shm.close()
+                shm.unlink()
+        else:
+            if (self.file_handler is None or
+                (self.frames_per_file > 0 and np.mod(self.saved_frame_count,
+                                                   self.frames_per_file)==0)):
+                self._init_file_handler(frame)
+            frameid, timestamp = metadata[:2] 
+            self._write(frame,frameid,timestamp)
+            self.saved_frame_count += 1
                 
     def close(self):
         self.close_flag.set()

@@ -14,6 +14,7 @@ from PyQt5.QtCore import Qt, QTimer
 from udp_socket import UDPSocket
 from utils import display
 from camera_handler import CameraHandler
+from cams.avt_cam import AVTCam
 
 dirpath = dirname(path.realpath(__file__))
 
@@ -224,7 +225,15 @@ class CamWidget(QWidget):
             dest = self.cam_handler.get_filepath()
             self.save_location_label.setText('Filepath: ' + dest)
             if self.frame_nr != self.cam_handler.total_frames.value:
-                self.original_img = np.copy(self.cam_handler.get_image())
+                img = self.cam_handler.get_image()
+                # Handle shared memory tuple from AVT
+                if isinstance(img, tuple) and len(img) == 3 and isinstance(img[0], str):
+                    shm_name, shape, dtype = img
+                    img, shm = AVTCam.frame_from_shm(shm_name, shape, dtype)
+                    img = np.array(img, copy=True)
+                    shm.close()
+                    shm.unlink()
+                self.original_img = np.copy(img)
                 self.is_img_processed = False
                 self.frame_nr = self.cam_handler.total_frames.value
             if self.cam_handler.start_trigger.is_set() and not self.cam_handler.stop_trigger.is_set():

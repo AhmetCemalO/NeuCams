@@ -10,6 +10,21 @@ except ImportError:
     pass
 from ..utils import display
 
+def debug_pickle(obj, prefix=''):
+    import pickle, collections.abc
+    try:
+        pickle.dumps(obj)
+        print(prefix, '✅ picklable', type(obj))
+    except Exception as e:
+        print(prefix, '❌ NOT picklable', type(obj), '→', e)
+        if isinstance(obj, (list, tuple, set)):
+            for i, item in enumerate(obj):
+                debug_pickle(item, prefix + f'  [{i}] ')
+        elif isinstance(obj, dict):
+            for k, v in obj.items():
+                debug_pickle(k, prefix + '  {key} ')
+                debug_pickle(obj[k], prefix + f'  {k}: ')
+
 class QImagingCam(GenericCam):
     def __init__(self, cam_id = None,
                  outQ = None,
@@ -126,13 +141,15 @@ class QImagingCam(GenericCam):
                 frameID = f.frameNumber
                 if self.saving.is_set():
                     self.was_saving = True
-                    self.queue.put((frame.reshape([self.h,self.w]),
-                                    (frameID,timestamp)))
+                    debug_pickle((frame.reshape([self.h,self.w]), (frameID,timestamp)), 'QUEUE PAYLOAD')
+                    self.queue.put((frame.reshape([self.h,self.w]), (frameID,timestamp)))
                 elif self.was_saving:
                     self.was_saving = False
+                    debug_pickle(['STOP'], 'QUEUE PAYLOAD')
                     self.queue.put(['STOP'])
                 self.img[:] = np.reshape(frame,self.img.shape)[:]
 
+                debug_pickle(f, 'QUEUE PAYLOAD')
                 self.cam_queue.put(f)
             
             time.sleep(0.01)

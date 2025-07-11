@@ -7,6 +7,7 @@ import ctypes
 import numpy as np
 from utils import display
 
+
 class GenericCam:
     """Abstract class for interfacing with the cameras
     Has last frame on multiprocessing array
@@ -26,6 +27,14 @@ class GenericCam:
     
     def _init_format(self):
         frame, _ = self.image()
+        # Handle shared memory tuple from AVT
+        if isinstance(frame, tuple) and len(frame) == 3 and isinstance(frame[0], str):
+            from cams.avt_cam import AVTCam  # <-- move import here
+            shm_name, shape, dtype = frame
+            frame, shm = AVTCam.frame_from_shm(shm_name, shape, dtype)
+            frame = np.array(frame, copy=True)
+            shm.close()
+            shm.unlink()
         self.format['height'] = frame.shape[0]
         self.format['width'] = frame.shape[1]
         self.format['n_chan'] = frame.shape[2] if frame.ndim == 3 else 1

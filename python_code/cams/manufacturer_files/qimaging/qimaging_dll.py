@@ -13,6 +13,8 @@ import Queue
 import threading
 import gc
 import struct
+import pickle
+import collections.abc
 
 class Error(Exception):
     pass
@@ -1647,3 +1649,39 @@ class CameraQueue:
         self._queue.put(frame)
         # frame ready
         self.frame_done()
+        # ---- DETACH from DLL buffer so the object is picklable -------------
+
+
+        # 1. copy the bytes the frame owns
+        img_bytes = ctypes.string_at(frame.pBuffer, frame.bufferSize)
+        img_np    = np.frombuffer(img_bytes, dtype=np.uint8).copy()  # real copy
+
+        # 2. (optional) reshape if consumer expects 2-D
+        # img_np = img_np.reshape(frame.height, frame.width)
+
+        # 3. pack whatever metadata you need
+        meta = dict(
+            intensity = frame.intensity,
+            fmt       = frame.formatString,
+            width     = getattr(frame, "width", 0),
+            height    = getattr(frame, "height", 0),
+            timestamp = getattr(frame, "timeStamp", None),
+        )
+
+        # 4. now the tuple *is* picklable
+        self._queue.put((img_np, meta))
+        self.frame_done()
+
+def debug_pickle(obj, prefix=''):
+    try:
+        pickle.dumps(obj)
+        print(prefix, '✅ picklable', type(obj))
+    except Exception as e:
+        print(prefix, '❌ NOT picklable', type(obj), '→', e)
+        if isinstance(obj, (list, tuple, set)):
+            for i, item in enumerate(obj):
+                debug_pickle(item, prefix + f'  [{i}] ')
+        elif isinstance(obj, dict):
+            for k, v in obj.items():
+                debug_pickle(k, prefix + '  {key} ')
+                debug_pickle(obj[k], prefix + f'  {k}: ')

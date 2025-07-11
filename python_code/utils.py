@@ -128,4 +128,26 @@ def check_preferences(pref): #TODO check for required fields
     if len(error_messages) > 0:
         print(error_messages, flush=True)
         sys.exit(0)
+
+def resolve_cam_id_by_serial(driver, serial_number):
+    """
+    Given a driver and serial_number, return the correct cam_id for use with the camera class.
+    For 'genicam', returns the serial number directly.
+    For 'avt', enumerates all cameras using vmbpy, matches serial, and returns the corresponding ID.
+    For 'pco', returns None (always opens first camera).
+    """
+    driver = driver.lower()
+    if driver == 'genicam':
+        return serial_number
+    elif driver == 'avt':
+        from vmbpy import VmbSystem
+        with VmbSystem.get_instance() as vmb:
+            for cam in vmb.get_all_cameras():
+                if hasattr(cam, 'get_serial') and cam.get_serial() == serial_number:
+                    return cam.get_id()
+        raise ValueError(f"No AVT camera found with serial number {serial_number}")
+    elif driver == 'pco':
+        return None  # Always opens first camera
+    else:
+        raise ValueError(f"Unknown driver for serial-based selection: {driver}")
     
