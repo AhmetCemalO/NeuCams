@@ -147,6 +147,10 @@ class AVTCam(GenericCam):
             display("apply_params() called before camera opened", level="warning")
             return
 
+        resume_recording = self.is_recording
+        if self.is_recording:
+            self.stop()
+
         p = self.params
         try:
             _set(self.cam_handle, "EventNotification", "On")
@@ -166,6 +170,9 @@ class AVTCam(GenericCam):
 
         except VmbFeatureError as err:
             display(f"Error applying parameters: {err}", level="warning")
+
+        if resume_recording:
+            self._record()
 
     # ------------------------------------------------------------------
     # acquisition

@@ -1,7 +1,7 @@
 import sys
 from argparse import ArgumentParser
 from PyQt5.QtWidgets import QApplication
-from view.widgets import PyCamsWindow
+from view_ng.widgets import PyCamsWindow
 from utils import get_preferences, display
 
 def main():

@@ -3,17 +3,20 @@ from os import path, makedirs
 from datetime import datetime
 import json
 import time
+import platform
+import subprocess
+import logging
 
-def display(msg, level='info'):
+# Set up a basic logger
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def display(s, level='info'):
     """
-    Print messages to stdout. Only prints info-level messages if LABCAMS_VERBOSE is set in builtins.
-    Warnings and errors are always printed.
+    Prints a string to the console, optionally with a datestring
+    level: 'info' (default), 'warning', 'error'
     """
-    import builtins
-    verbose = getattr(builtins, 'LABCAMS_VERBOSE', False)
-    if verbose or level in ['warning', 'error']:
-        sys.stdout.write('['+datetime.today().strftime('%y-%m-%d %H:%M:%S')+'] - ' + msg + '\n')
-        sys.stdout.flush()
+    log_func = getattr(logging, level, logging.info)
+    log_func(s)
 
 DEFAULT_SERVER_PARAMS = {
                          'server': 'udp',
@@ -132,22 +135,30 @@ def check_preferences(pref): #TODO check for required fields
 def resolve_cam_id_by_serial(driver, serial_number):
     """
     Given a driver and serial_number, return the correct cam_id for use with the camera class.
-    For 'genicam', returns the serial number directly.
-    For 'avt', enumerates all cameras using vmbpy, matches serial, and returns the corresponding ID.
-    For 'pco', returns None (always opens first camera).
     """
     driver = driver.lower()
     if driver == 'genicam':
+        # For GenICam, the serial number is used as the ID.
         return serial_number
-    elif driver == 'avt':
-        from vmbpy import VmbSystem
-        with VmbSystem.get_instance() as vmb:
-            for cam in vmb.get_all_cameras():
-                if hasattr(cam, 'get_serial') and cam.get_serial() == serial_number:
-                    return cam.get_id()
-        raise ValueError(f"No AVT camera found with serial number {serial_number}")
     elif driver == 'pco':
-        return None  # Always opens first camera
+        # PCO cameras are often opened by index, not ID.
+        return None
+    elif driver == 'avt':
+        try:
+            from vmbpy import VmbSystem
+            with VmbSystem.get_instance() as vmb:
+                for cam in vmb.get_all_cameras():
+                    if hasattr(cam, 'get_serial') and cam.get_serial() == serial_number:
+                        return cam.get_id()
+            display(f"No AVT camera found with serial number {serial_number}", level='warning')
+            return None # Not found
+        except ImportError:
+            display("vmbpy not found, cannot resolve AVT camera by serial.", level='error')
+            return None
+        except Exception as e:
+            display(f"An error occurred while resolving AVT cam by serial: {e}", level='error')
+            return None
     else:
-        raise ValueError(f"Unknown driver for serial-based selection: {driver}")
+        display(f"Serial number resolution not implemented for driver: {driver}", level='warning')
+        return None
     

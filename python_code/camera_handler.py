@@ -5,6 +5,7 @@ import ctypes
 import time
 import datetime
 from os.path import dirname, join
+import json
 from file_writer import BinaryWriter, TiffWriter, FFMPEGWriter, OpenCVWriter
 from utils import display, resolve_cam_id_by_serial
 from importlib import import_module
@@ -235,68 +236,100 @@ class CameraHandler(Process):
         self.cam.apply_params()
         self.is_running.set()
         self.camera_ready.clear()
+
+    def load_cam_settings(self, fpath):
+        """Loads camera settings from a JSON file."""
+        try:
+            with open(fpath, 'r') as f:
+                settings = json.load(f)
+            for param, value in settings.items():
+                self.set_cam_param(param, value)
+            display(f"Loaded camera settings from {fpath}")
+        except Exception as e:
+            display(f"Error loading settings: {e}", level='error')
+
+    def save_cam_settings(self, fpath):
+        """Saves current camera settings to a JSON file."""
+        # Ensure the filename ends with .json
+        if not fpath.lower().endswith('.json'):
+            fpath += '.json'
+
+        try:
+            # Query the camera for its current parameters
+            self.query_cam_params()
+            params = self.get_cam_params(timeout=1.0) # Wait up to 1s
+            if params is None:
+                display("Could not retrieve camera settings to save.", level='error')
+                return
+
+            with open(fpath, 'w') as f:
+                json.dump(params, f, indent=4)
+            display(f"Saved camera settings to {fpath}")
+        except Exception as e:
+            display(f"Error saving settings: {e}", level='error')
     
     def _process_queues(self):
         self._process_params()
-    
+
     def _process_params(self):
-        """ self.cam_param_InQ is setget
-            ('set', param, val)
-            ('get') -> returns all params # TODO should we get the actual values of the acquisition rather than the last inputs?
-            self.cam_param_OutQ is queried params
-            (param, val) [only queried params]
-        """
+        # Handle all pending requests in the queue
         params_to_set = False
-        while True:
+        while not self.cam_param_InQ.empty():
             try:
-               param = self.cam_param_InQ.get_nowait()
-            except queue.Empty:
-                break
-            else:
-                if param[0] == 'get':
-                    try:
-                        clear_queue(self.cam_param_OutQ)
-                        self.cam_param_OutQ.put_nowait({k:self.cam.params[k] for k in self.cam.params if k in self.cam.exposed_params})
-                    except queue.Full:
-                        pass
+                message = self.cam_param_InQ.get_nowait()
+                if not isinstance(message, tuple) or not message:
+                    continue
+
+                command = message[0]
+                if command == 'get':
+                    # Always clear previous params from the queue
+                    clear_queue(self.cam_param_OutQ)
+                    # Send back a copy of all exposed params
+                    for param, val in self.cam.params.items():
+                        if param in self.cam.exposed_params:
+                            self.cam_param_OutQ.put((param, val))
                     self.cam_param_get_flag.set()
-                elif param[0] == 'set':
-                    self.cam.set_param(param[1], param[2])
+
+                elif command == 'set' and len(message) == 3:
+                    _, param, val = message
+                    self.cam.set_param(param, val)
                     params_to_set = True
+
+            except queue.Empty:
+                break  # No more messages
+        
+        # If any 'set' commands were processed, apply them in one batch
         if params_to_set:
             self.cam.apply_params()
 
     def set_cam_param(self, param : str, val):
+        """Puts a ('set', param, value) command on the input queue."""
         try:
-            self.cam_param_InQ.put_nowait(['set', param, val])
+            # Use a tuple to be consistent with the 'get' command
+            self.cam_param_InQ.put(('set', param, val))
         except queue.Full:
-            # print(f"Warning: could not set cam params, order queue is full", flush=True)
-            pass
-    
+            display(f"Warning: could not set cam param {param}, queue is full",
+                    level='warning')
+
     def query_cam_params(self):
-        try:
-            self.cam_param_InQ.put_nowait(['get'])
-        except queue.Full:
-            # print(f"Warning: could not query cam params, order queue is full", flush=True)
-            pass
-                
-    def get_cam_params(self):
-        if not self.cam_param_get_flag.is_set():
-            print(f"Warning: check cam_param_get_flag before calling this function, returning.", flush=True)
-            return
-        n_loop = 0
-        ret = None
-        while True:
+        # self.cam_param_OutQ.put(None) # Not needed with clear_queue
+        self.cam_param_InQ.put(('get',))
+
+    def get_cam_params(self, timeout=0.2):
+        """
+        Returns the camera parameters.
+        timeout (float): The optional timeout in seconds.
+        """
+        params = {}
+        tstart = time.time()
+        while time.time() - tstart < timeout:
             try:
-                ret = self.cam_param_OutQ.get_nowait()
-                self.cam_param_get_flag.clear()
-            except queue.Empty:
+                param,val = self.cam_param_OutQ.get(timeout=0.01)
+                params[param] = val
+            except (queue.Empty, TypeError):
                 break
-            n_loop += 1
-        if n_loop > 1:
-            print(f"Warning: you queried the cam params {n_loop} times and only got them once", flush=True)
-        
-        return ret
+        self.cam_param_get_flag.clear()
+        return params if params else None
         
     def start_saving(self):
         self.saving.set()

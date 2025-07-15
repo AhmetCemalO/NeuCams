@@ -118,9 +118,9 @@ class GenICam(GenericCam):
         if not hasattr(self, 'cam_handle') or self.cam_handle is None:
             display('GenICam cam apply_params() called, but camera was never opened.', level='warning')
             return
-        resume_recording = self.is_recording
-        if self.is_recording:
-            self.stop()
+        # resume_recording = self.is_recording
+        # if self.is_recording:
+        #     self.stop()
         params = {'EventNotification' : 'On',
                   'PixelFormat': 'Mono8',
                   'AcquisitionFrameRate': self.params['frame_rate'],
@@ -134,8 +134,8 @@ class GenICam(GenericCam):
                     getattr(self.features, key).value = params[key]
             except Exception as e:
                 pass
-        if resume_recording:
-            self._record()
+        # if resume_recording:
+        #     self._record()
 
     def get_features(self):
         if not hasattr(self, 'cam_handle') or self.cam_handle is None:

@@ -1,20 +1,26 @@
 import sys
-from os import getcwd
-from os import path
+from os import getcwd, path
+import os
 from os.path import join, dirname
 import numpy as np
 import cv2
 import time
 from functools import lru_cache
+from collections import deque
 from PyQt5 import uic
 from PyQt5.QtGui import QImage, QPixmap, QIcon
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QMessageBox, QMdiSubWindow, QAction, QComboBox, QSpinBox, QCheckBox
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QMessageBox,
+                             QMdiSubWindow, QAction, QComboBox, QSpinBox,
+                             QCheckBox, QFileDialog)
 from PyQt5.QtCore import Qt, QTimer
 
 from udp_socket import UDPSocket
 from utils import display
 from camera_handler import CameraHandler
 from cams.avt_cam import AVTCam
+from view_ng.components import DisplaySettingsWidget, ImageProcessingWidget
+from view_ng.base_widgets import BaseCameraWidget, nparray_to_qimg
+
 
 dirpath = dirname(path.realpath(__file__))
 
@@ -178,277 +184,209 @@ class PyCamsWindow(QMainWindow):
         sys.exit()
 
 
-def nparray_to_qimg(img):
-    height, width, n_chan = img.shape
-    dtype = img.dtype
-    if dtype == np.uint16:
-        img = cv2.convertScaleAbs(img) #starting from pyqt 5.13 (not available yet) we could use Format_Grayscale16 to not have to do this conversion
-    format = QImage.Format_Grayscale8 if n_chan == 1 else QImage.Format_RGB888
-    bytesPerLine = n_chan * width
-    return QImage(img.data, width, height, bytesPerLine, format)
-        
-class CamWidget(QWidget):
-    def __init__(self, cam_handler = None):
-        super().__init__()
+class CamWidget(BaseCameraWidget):
+    def __init__(self, cam_handler=None):
+        super().__init__(cam_handler)
         uic.loadUi(join(dirpath, 'UI_cam.ui'), self)
-        
-        self.cam_handler = cam_handler
-        
-        self._init_trigger_checkbox()
-        self.is_triggered = self.trigger_checkBox.isChecked()
-        
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._update)
-        self._timer.start(100)
-        
-        self.AR_policy = Qt.KeepAspectRatio
-        
-        self.original_img = None
-        self.processed_img = None
-        self.is_img_processed = False
-        
-        self.frame_nr = None
-        
-        self.start_stop_pushButton.clicked.connect(self._start_stop)
+
+        # --- FPS computation ---
+        self._fps_deque = deque(maxlen=10) # Store last 10 FPS values
+
+        # --- Connections ---
+        self.start_stop_pushButton.clicked.connect(self._start_stop_toggled)
         self.record_checkBox.stateChanged.connect(self._record)
-        self.trigger_checkBox.stateChanged.connect(self._trigger)
-        self.keep_AR_checkBox.stateChanged.connect(self._pixmap_aspect_ratio)
-        
-        self.cam_settings = CamSettingsWidget(self, self.cam_handler)
+
         self.camera_settings_pushButton.clicked.connect(self._toggle_cam_settings)
-        
-        self.display_settings = DisplaySettingsWidget(self)
         self.display_settings_pushButton.clicked.connect(self._toggle_display_settings)
-    
+        self.image_processing_pushButton.clicked.connect(self._toggle_img_processing_settings)
+
+        # --- Child widgets ---
+        self.cam_settings = CamSettingsWidget(self, self.cam_handler)
+        self.display_settings = DisplaySettingsWidget(self)
+        self.img_processing_settings = ImageProcessingWidget(self)
+
+        # --- Image processing pipeline ---
+        # The new stages from the ImageProcessingWidget should be inserted
+        # at the beginning of the pipeline, before the contrast stretcher.
+        if hasattr(self.display_settings, 'pipeline'):
+            pipeline = self.display_settings.pipeline
+            # This is a bit of a hack; a better design would be a dedicated
+            # pipeline manager class. For now, we manually insert at the start.
+            pipeline.stages.insert(0, self.img_processing_settings.subtract_stage)
+            pipeline.stages.insert(0, self.img_processing_settings.blur_stage)
+
     def _update(self):
-        if self.cam_handler is not None:
-            dest = self.cam_handler.get_filepath()
-            self.save_location_label.setText('Filepath: ' + dest)
-            if self.frame_nr != self.cam_handler.total_frames.value:
-                img = self.cam_handler.get_image()
-                # Handle shared memory tuple from AVT
-                if isinstance(img, tuple) and len(img) == 3 and isinstance(img[0], str):
-                    shm_name, shape, dtype = img
-                    img, shm = AVTCam.frame_from_shm(shm_name, shape, dtype)
-                    img = np.array(img, copy=True)
-                    shm.close()
-                    shm.unlink()
-                self.original_img = np.copy(img)
-                self.is_img_processed = False
-                self.frame_nr = self.cam_handler.total_frames.value
-            if self.cam_handler.start_trigger.is_set() and not self.cam_handler.stop_trigger.is_set():
-                self._set_stop_text()
-            else:
-                self._set_start_text()
+        if self.cam_handler is None:
+            return
+
+        # Update file path display
+        dest = self.cam_handler.get_filepath()
+        self.save_location_label.setText('Filepath: ' + dest)
+
+        # Process new image if available
+        if self.frame_nr != self.cam_handler.total_frames.value:
+            img = self.cam_handler.get_image()
+            if isinstance(img, tuple) and len(img) == 3 and isinstance(img[0], str):
+                shm_name, shape, dtype = img
+                img, shm = AVTCam.frame_from_shm(shm_name, shape, dtype)
+                img = np.array(img, copy=True)
+                shm.close()
+                shm.unlink()
+            self.original_img = np.copy(img)
+            self.is_img_processed = False
+            self.frame_nr = self.cam_handler.total_frames.value
+
+        # Update FPS and frame count labels
+        self._update_stats()
+
+        # Update camera state (e.g., start/stop button text)
+        if self.cam_handler.start_trigger.is_set() and not self.cam_handler.stop_trigger.is_set():
+            self._set_stop_text()
+        else:
+            self._set_start_text()
+
+        # Update image display
         if self.display_settings.isVisible():
             self.is_img_processed = False
         self._update_img()
         super().update()
-        
+
+    def _update_stats(self):
+        current_time = time.time()
+        current_frame = self.cam_handler.total_frames.value
+        dt = current_time - self._prev_time
+        df = current_frame - self._prev_frame_nr
+
+        if dt >= 0.5 and df > 0: # Update more frequently
+            fps = df / dt
+            self._fps_deque.append(fps)
+            avg_fps = np.mean(self._fps_deque)
+            self.fps_label.setText(f"{avg_fps:.1f} fps")
+            self._prev_time = current_time
+            self._prev_frame_nr = current_frame
+        self.frame_nr_label.setText(f"frame: {current_frame}")
+
     def _update_img(self):
         if self.original_img is not None:
-            self.processed_img = self.display_settings.process_img(self.original_img) if not self.is_img_processed else self.processed_img
-            self.is_img_processed = True
+            if not self.is_img_processed:
+                self.processed_img = self.display_settings.process_img(self.original_img)
+                self.is_img_processed = True
+            
             pixmap = QPixmap(nparray_to_qimg(self.processed_img))
-            pixmap = pixmap.scaled(self.img_label.width(), self.img_label.height(), self.AR_policy, Qt.FastTransformation)
-            self.img_label.setPixmap(pixmap)
-    
-    def _pixmap_aspect_ratio(self, state):
-        self.AR_policy = Qt.KeepAspectRatio if state else Qt.IgnoreAspectRatio
-
-    def resizeEvent(self, event):
-        pixmap = self.img_label.pixmap()
-        if pixmap is not None:
-            self.img_label.setMinimumSize(1,1)
-            pixmap = pixmap.scaled(self.img_label.width(), self.img_label.height(), self.AR_policy, Qt.FastTransformation)
+            pixmap = pixmap.scaled(self.img_label.width(), self.img_label.height(),
+                                   self.AR_policy, Qt.FastTransformation)
             self.img_label.setPixmap(pixmap)
 
-    def _start_stop(self):
-        if self.start_stop_pushButton.text() == "Start":
+    def _start_stop_toggled(self, checked):
+        if checked:
             self.start_cam()
         else:
             self.stop_cam()
-    
-    def start_cam(self):
-        if self.cam_handler is not None:
-            ret = self.cam_handler.start_acquisition()
-            if ret:
-                self._set_stop_text()
-        else:
-            print("Could not start cam, camera already running", flush=True)
-            
-    def stop_cam(self):
-        self.cam_handler.stop_acquisition()
-        self._set_start_text()
-    
+
     def _set_start_text(self):
         self.start_stop_pushButton.setText("Start")
+        self.start_stop_pushButton.setChecked(False)
         self.record_checkBox.setEnabled(True)
-        self.trigger_checkBox.setEnabled(True)
-        
+
     def _set_stop_text(self):
         self.start_stop_pushButton.setText("Stop")
+        self.start_stop_pushButton.setChecked(True)
         self.record_checkBox.setEnabled(False)
-        self.trigger_checkBox.setEnabled(False)
-        
+
     def _record(self, state):
         if state:
             self.cam_handler.start_saving()
         else:
             self.cam_handler.stop_saving()
 
-    def _init_trigger_checkbox(self):
-        self.cam_handler.query_cam_params()
-        while not self.cam_handler.cam_param_get_flag.is_set():
-            time.sleep(0.01)
-        params = self.cam_handler.get_cam_params()
-        if params is not None:
-            is_setting_available = 'triggered' in params
-            if is_setting_available:
-                self.trigger_checkBox.setChecked(params['triggered'])
-            else:
-                self.trigger_checkBox.setEnabled(False)
-                
-    def _trigger(self, state):
-        self.is_triggered = state
-        self.cam_handler.set_cam_param('triggered', state)
+    def _toggle_img_processing_settings(self):
+        self.img_processing_settings.setVisible(not self.img_processing_settings.isVisible())
         
-    def _toggle_cam_settings(self):
-        is_visible = self.cam_settings.isVisible()
-        self.cam_settings.setVisible(not is_visible)
-        if not is_visible:
-            self.cam_settings.init_fields()
-            
-    def _toggle_display_settings(self):
-        is_visible = self.display_settings.isVisible()
-        self.display_settings.setVisible(not is_visible)
-
 class CamSettingsWidget(QWidget):
-    def __init__(self, parent, cam_handler = None):
+    def __init__(self, parent, cam_handler=None):
         super().__init__(parent)
-        
+
         self.setWindowFlag(Qt.Window)
-        
         uic.loadUi(join(dirpath, 'UI_cam_settings.ui'), self)
-        
+
         self.cam_handler = cam_handler
-        
+
+        # --- Connections ---
         self.apply_pushButton.clicked.connect(self._apply_settings)
+        self.load_settings_pushButton.clicked.connect(self._load_settings)
+        self.save_settings_pushButton.clicked.connect(self._save_settings)
+
         self.autogain_checkBox.stateChanged.connect(self._toggle_gain_spinBox)
         self.mode_comboBox.currentTextChanged.connect(self._toggle_nframes_spinBox)
-        
-        self.settings = {'frame_rate': self.framerate_spinBox,
-                         'exposure': self.exposure_spinBox,
-                         'gain': self.gain_spinBox,
-                         'gain_auto' : self.autogain_checkBox,
-                         'binning': self.binning_comboBox,
-                         'acquisition_mode': self.mode_comboBox,
-                         'n_frames': self.nframes_spinBox}
-    
+
+        # --- Widgets dictionary ---
+        self.settings = {
+            'frame_rate': self.framerate_spinBox,
+            'exposure': self.exposure_spinBox,
+            'gain': self.gain_spinBox,
+            'gain_auto': self.autogain_checkBox,
+            'binning': self.binning_comboBox,
+            'acquisition_mode': self.mode_comboBox,
+            'n_frames': self.nframes_spinBox
+        }
+
     def _toggle_gain_spinBox(self, state):
         self.gain_spinBox.setEnabled(not state)
-    
+
     def _toggle_nframes_spinBox(self, text):
         self.nframes_spinBox.setEnabled(text != "Continuous")
-            
+
     def _apply_settings(self):
-        for setting in self.settings:
-            widget = self.settings[setting]
-            if widget.isEnabled():
-                if isinstance(widget, QSpinBox):
-                    val = widget.value()
-                elif isinstance(widget, QComboBox):
-                    val = widget.currentText()
-                elif isinstance(widget, QCheckBox):
-                    val = widget.isChecked()
-                else:
-                    continue
-                self.cam_handler.set_cam_param(setting, val)
-        
+        for setting, widget in self.settings.items():
+            if not widget.isEnabled():
+                continue
+
+            if isinstance(widget, QSpinBox):
+                val = widget.value()
+            elif isinstance(widget, QComboBox):
+                val = widget.currentText()
+            elif isinstance(widget, QCheckBox):
+                val = widget.isChecked()
+            else:
+                continue
+            self.cam_handler.set_cam_param(setting, val)
+
     def init_fields(self):
         self.cam_handler.query_cam_params()
         while not self.cam_handler.cam_param_get_flag.is_set():
             time.sleep(0.01)
         params = self.cam_handler.get_cam_params()
-        if params is not None:
-            for setting in self.settings:
-                is_setting_available = setting in params
-                widget = self.settings[setting]
-                widget.setEnabled(is_setting_available)
-                if isinstance(widget, QSpinBox):
-                    widget.setValue(params[setting] if is_setting_available else 0)
-                elif isinstance(widget, QComboBox):
-                    widget.setCurrentText(params[setting] if is_setting_available else "")
-                elif isinstance(widget, QCheckBox):
-                    widget.setChecked(params[setting] if is_setting_available else False)
+        if params is None:
+            return
+
+        for setting, widget in self.settings.items():
+            is_setting_available = setting in params
+            widget.setEnabled(is_setting_available)
+            if not is_setting_available:
+                continue
+
+            value = params[setting]
+            if isinstance(widget, QSpinBox):
+                widget.setValue(value)
+            elif isinstance(widget, QComboBox):
+                widget.setCurrentText(value)
+            elif isinstance(widget, QCheckBox):
+                widget.setChecked(value)
+
         self._toggle_gain_spinBox(self.autogain_checkBox.isChecked())
         self._toggle_nframes_spinBox(self.mode_comboBox.currentText())
 
-@lru_cache(maxsize=1)
-def get_image_depth(dtype):
-    img_depth = 0
-    if dtype == np.uint8:
-        img_depth = 255
-    elif dtype == np.uint16:
-        img_depth = 65_535
-    else:
-        print(f"Warning: no assigned image depth for your dtype {dtype}... using 65_535", flush=True)
-        img_depth = 65_535 # yes, that's a bit random
-    return img_depth
+    def _load_settings(self):
+        # Note: XML support can be added here if needed
+        fileName, _ = QFileDialog.getOpenFileName(
+            self, "Load Settings", "", "JSON Files (*.json)")
+        if fileName:
+            self.cam_handler.load_cam_settings(fileName)
+            self.init_fields()  # Refresh display
 
-def stretch_histogram(img, lower_thresh, upper_thresh):
-    img_depth = get_image_depth(img.dtype)
-    r = img_depth/(upper_thresh-lower_thresh+2) # unit of stretching
-    out = np.round(r*(img-lower_thresh+1)).astype(img.dtype) # stretched values
-    out[img < lower_thresh] = 0
-    out[img > upper_thresh] = img_depth
-    return out
-        
-class DisplaySettingsWidget(QWidget):
-    #https://www.mfitzp.com/tutorials/embed-pyqtgraph-custom-widgets-qt-app/
-    def __init__(self, parent):
-        super().__init__(parent)
-        
-        self.setWindowFlag(Qt.Window)
-        
-        uic.loadUi(join(dirpath, 'UI_display_settings.ui'), self)
-        
-        self.graphWidget.showAxis('left', False)
-
-        self.minimum_percent = 0
-        self.maximum_percent = 100
-        
-        self.min_horizontalSlider.valueChanged.connect(self.set_minimum)
-        self.max_horizontalSlider.valueChanged.connect(self.set_maximum)
-        
-        self.reset_pushButton.clicked.connect(self.reset)
-
-    def set_minimum(self, val):
-        self.minimum_percent = val
-
-    def set_maximum(self, val):
-        self.maximum_percent = val
-    
-    def reset(self):
-        self.minimum_percent = 0
-        self.maximum_percent = 100
-        self.min_horizontalSlider.setValue(self.minimum_percent)
-        self.max_horizontalSlider.setValue(self.maximum_percent)
-    
-    def process_img(self, img):
-        if self.isVisible():
-            self.process_histogram(img)
-        if self.minimum_percent == 0 and self.maximum_percent == 100:
-            return img
-        img_depth = get_image_depth(img.dtype)
-        minimum = self.minimum_percent/100 * img_depth
-        maximum = self.maximum_percent/100 * img_depth
-        img = stretch_histogram(img, minimum, maximum)
-        return img
-        
-    def process_histogram(self, img):
-        self.graphWidget.clear()
-        img_depth = get_image_depth(img.dtype)
-        y,x = np.histogram(img, bins=100, range=(0, img_depth))
-        self.graphWidget.plot(y)
+    def _save_settings(self):
+        fileName, _ = QFileDialog.getSaveFileName(
+            self, "Save Settings", "", "JSON Files (*.json)")
+        if fileName:
+            self.cam_handler.save_cam_settings(fileName)
         
