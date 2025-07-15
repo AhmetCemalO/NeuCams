@@ -135,15 +135,9 @@ class CameraHandler(Process):
                             frame = np.array(frame, copy=True)
                             shm.close()
                             shm.unlink()
-                        #print("FRAME TYPE: ", type(frame), flush=True)
-                        # print(metadata, flush=True)
+                        # Remove type/shape debug prints
                         if frame is not None:
                             if self.saving.is_set():
-                                import numpy as np
-                                if isinstance(frame, np.ndarray):
-                                    print("QUEUE DEBUG: type=", type(frame), "base=", frame.base, "shape=", frame.shape)
-                                else:
-                                    print("QUEUE DEBUG: type=", type(frame))
                                 writer.save(frame, metadata)
                             self._update(frame,metadata)
                         elif metadata == "stop":
@@ -276,13 +270,15 @@ class CameraHandler(Process):
         try:
             self.cam_param_InQ.put_nowait(['set', param, val])
         except queue.Full:
-            print(f"Warning: could not set cam params, order queue is full", flush=True)
+            # print(f"Warning: could not set cam params, order queue is full", flush=True)
+            pass
     
     def query_cam_params(self):
         try:
             self.cam_param_InQ.put_nowait(['get'])
         except queue.Full:
-            print(f"Warning: could not query cam params, order queue is full", flush=True)
+            # print(f"Warning: could not query cam params, order queue is full", flush=True)
+            pass
                 
     def get_cam_params(self):
         if not self.cam_param_get_flag.is_set():

@@ -133,7 +133,7 @@ class GenICam(GenericCam):
                 if hasattr(self.features, key):
                     getattr(self.features, key).value = params[key]
             except Exception as e:
-                print(f"Could not set param [{key}] to value [{params[key]}], {repr(e)}", flush=True)
+                pass
         if resume_recording:
             self._record()
 

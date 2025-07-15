@@ -4,7 +4,7 @@
             "type": "genicam",
             "name": "Nano-M1930(00:01:0D:C6:88:10)",
             "driver": "genicam",
-            "id": 0,
+            "serial_number": "H2260407",
             "params": {
                 "exposure": 1500,
 				"frame_rate": 30,

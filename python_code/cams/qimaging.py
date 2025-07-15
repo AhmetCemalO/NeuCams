@@ -14,9 +14,10 @@ def debug_pickle(obj, prefix=''):
     import pickle, collections.abc
     try:
         pickle.dumps(obj)
-        print(prefix, '✅ picklable', type(obj))
+        # print(prefix, '✅ picklable', type(obj))
+        pass
     except Exception as e:
-        print(prefix, '❌ NOT picklable', type(obj), '→', e)
+        # print(prefix, '❌ NOT picklable', type(obj), '→', e)
         if isinstance(obj, (list, tuple, set)):
             for i, item in enumerate(obj):
                 debug_pickle(item, prefix + f'  [{i}] ')

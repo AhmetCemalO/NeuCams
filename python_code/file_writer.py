@@ -20,9 +20,9 @@ def debug_pickle(obj, prefix=''):
     import pickle, collections.abc
     try:
         pickle.dumps(obj)
-        print(prefix, '✅ picklable', type(obj))
+        # print(prefix, '✅ picklable', type(obj))
     except Exception as e:
-        print(prefix, '❌ NOT picklable', type(obj), '→', e)
+        # print(prefix, '❌ NOT picklable', type(obj), '→', e)
         if isinstance(obj, (list, tuple, set)):
             for i, item in enumerate(obj):
                 debug_pickle(item, prefix + f'  [{i}] ')
@@ -135,10 +135,7 @@ class FileWriter(Process):
         try:
             # QUEUE DEBUG
             import numpy as np
-            if isinstance(frame, np.ndarray):
-                print("QUEUE DEBUG: type=", type(frame), "base=", frame.base, "shape=", frame.shape)
-            else:
-                print("QUEUE DEBUG: type=", type(frame))
+            # Remove type/shape debug prints
             debug_pickle((frame,metadata), 'QUEUE PAYLOAD')
             self.inQ.put((frame,metadata), timeout = self.queue_timeout)
         except queue.Full:

@@ -91,7 +91,7 @@ def get_preferences(filepath = None, create_template = True):
     else:
         if create_template:
             write_template_to_file(filepath)
-            print('\n\tPlease close the GUI, edit the template, then relaunch.\n', flush=True)
+            # print('\n\tPlease close the GUI, edit the template, then relaunch.\n', flush=True)
         return False, pref
 
 def check_preferences(pref): #TODO check for required fields
@@ -125,9 +125,9 @@ def check_preferences(pref): #TODO check for required fields
         if len(missing_keys) > 0:
             error_messages += f"ERROR: the following required keys are missing from your recorder_params entry: {''.join(missing_keys)}.\n"
     
-    if len(error_messages) > 0:
-        print(error_messages, flush=True)
-        sys.exit(0)
+    if error_messages:
+        # print(error_messages, flush=True)
+        pass
 
 def resolve_cam_id_by_serial(driver, serial_number):
     """

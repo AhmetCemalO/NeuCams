@@ -56,11 +56,9 @@ class GenericCam:
     def apply_params(self):
         pass
     
-    def set_param(self, param : str, val):
-        param = param.lower()
-        if param in self.exposed_params:
-            self.params[param] = val
-            print(f"Set param {param} : {val}", flush=True)
+    def set_param(self, param, val):
+        # print(f"Set param {param} : {val}", flush=True)
+        self.params[param] = val
         
     def get_param(self, param : str):
         pass

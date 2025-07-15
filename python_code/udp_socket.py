@@ -8,7 +8,7 @@ class UDPSocket:
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.socket.bind(address)
         self.socket.settimeout(.02)
-        print(f'Listening to UDP port: {address[1]}')
+        # print(f'Listening to UDP port: {address[1]}')
     
     def __enter__(self):
         return self
