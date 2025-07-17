@@ -8,7 +8,7 @@ import subprocess
 import logging
 
 # Set up a basic logger
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def display(s, level='info'):
     """
@@ -86,18 +86,23 @@ def get_preferences(filepath = None, create_template = True):
     filepath = path.join(get_default_folder(),'default.json') if filepath is None else filepath
     pref = {}
     if path.isfile(filepath):
-        with open(filepath, 'r') as infile:
-            pref = json.load(infile)
-        pref['user_config_path'] = filepath
-        check_preferences(pref)
-        return True, pref
+        try:
+            with open(filepath, 'r') as infile:
+                pref = json.load(infile)
+            pref['user_config_path'] = filepath
+            return True, pref
+        except json.JSONDecodeError as e:
+            error_msg = (f"JSON syntax error in file:\n{filepath}\nLine {e.lineno}, Column {e.colno}:\n{e.msg}")
+            return error_msg, pref
+        except Exception as e:
+            return f"Error loading config file {filepath}: {e}", pref
+        # Only run check_preferences if JSON loaded successfully
     else:
         if create_template:
             write_template_to_file(filepath)
-            # print('\n\tPlease close the GUI, edit the template, then relaunch.\n', flush=True)
         return False, pref
 
-def check_preferences(pref): #TODO check for required fields
+def check_preferences(pref, valid_drivers=None):
     error_messages = ""
     
     def check_missing_keys(dict, required_keys):
@@ -114,23 +119,27 @@ def check_preferences(pref): #TODO check for required fields
         if "description" in cam:
             description =  cam["description"]
             if description in descriptions:
-                error_messages += f"ERROR: descriptions have to be unique in your labcams config file at {pref['user_config_path']}. Those are used to determine the recorder subfolders.\n"
+                error_messages += f"ERROR: descriptions have to be unique in your NeuCams config file at {pref.get('user_config_path', '')}. Those are used to determine the recorder subfolders.\n"
             descriptions.append(description)
         missing_keys = check_missing_keys(cam, required_cam_keys)
         if len(missing_keys) > 0:
-            error_messages += f"ERROR: the following required keys are missing from your cam entry: {''.join(missing_keys)}.\n"
-    
+            error_messages += f"ERROR: the following required keys are missing from your cam entry: {', '.join(missing_keys)}.\n"
+        # Validate driver
+        if valid_drivers is not None and 'driver' in cam:
+            driver = cam['driver'].lower()
+            if driver not in valid_drivers:
+                error_messages += (
+                    f"ERROR: Invalid driver '{driver}' in camera '{cam.get('description', '?')}'. "
+                    f"Valid drivers are: {', '.join(valid_drivers)}.\n"
+                )
     required_recorder_keys = ['data_folder', 'experiment_folder']
     if not "recorder_params" in pref:
-        error_messages += f"ERROR: there needs to be a recorder_params entry, with at least the following required keys: {''.join(required_recorder_keys)}.\n"
+        error_messages += f"ERROR: there needs to be a recorder_params entry, with at least the following required keys: {', '.join(required_recorder_keys)}.\n"
     else:
         missing_keys = check_missing_keys(pref["recorder_params"], required_recorder_keys)
         if len(missing_keys) > 0:
-            error_messages += f"ERROR: the following required keys are missing from your recorder_params entry: {''.join(missing_keys)}.\n"
-    
-    if error_messages:
-        # print(error_messages, flush=True)
-        pass
+            error_messages += f"ERROR: the following required keys are missing from your recorder_params entry: {', '.join(missing_keys)}.\n"
+    return error_messages
 
 def resolve_cam_id_by_serial(driver, serial_number):
     """
