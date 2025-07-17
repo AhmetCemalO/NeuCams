@@ -190,18 +190,15 @@ class CamWidget(BaseCameraWidget):
         uic.loadUi(join(dirpath, 'UI_cam.ui'), self)
 
         # --- FPS computation ---
-        self._fps_deque = deque(maxlen=10) # Store last 10 FPS values
+        self._fps_deque = deque(maxlen=5) # Store last 5 FPS values
 
         # --- Connections ---
         self.start_stop_pushButton.clicked.connect(self._start_stop_toggled)
         self.record_checkBox.stateChanged.connect(self._record)
-
-        self.camera_settings_pushButton.clicked.connect(self._toggle_cam_settings)
         self.display_settings_pushButton.clicked.connect(self._toggle_display_settings)
         self.image_processing_pushButton.clicked.connect(self._toggle_img_processing_settings)
 
         # --- Child widgets ---
-        self.cam_settings = CamSettingsWidget(self, self.cam_handler)
         self.display_settings = DisplaySettingsWidget(self)
         self.img_processing_settings = ImageProcessingWidget(self)
 
@@ -212,7 +209,7 @@ class CamWidget(BaseCameraWidget):
             pipeline = self.display_settings.pipeline
             # This is a bit of a hack; a better design would be a dedicated
             # pipeline manager class. For now, we manually insert at the start.
-            pipeline.stages.insert(0, self.img_processing_settings.subtract_stage)
+            pipeline.stages.insert(0, self.img_processing_settings.bg_subtract_stage)
             pipeline.stages.insert(0, self.img_processing_settings.blur_stage)
 
     def _update(self):
@@ -299,94 +296,9 @@ class CamWidget(BaseCameraWidget):
         else:
             self.cam_handler.stop_saving()
 
+    def _toggle_display_settings(self):
+        self.display_settings.setVisible(not self.display_settings.isVisible())
+        
     def _toggle_img_processing_settings(self):
         self.img_processing_settings.setVisible(not self.img_processing_settings.isVisible())
-        
-class CamSettingsWidget(QWidget):
-    def __init__(self, parent, cam_handler=None):
-        super().__init__(parent)
-
-        self.setWindowFlag(Qt.Window)
-        uic.loadUi(join(dirpath, 'UI_cam_settings.ui'), self)
-
-        self.cam_handler = cam_handler
-
-        # --- Connections ---
-        self.apply_pushButton.clicked.connect(self._apply_settings)
-        self.load_settings_pushButton.clicked.connect(self._load_settings)
-        self.save_settings_pushButton.clicked.connect(self._save_settings)
-
-        self.autogain_checkBox.stateChanged.connect(self._toggle_gain_spinBox)
-        self.mode_comboBox.currentTextChanged.connect(self._toggle_nframes_spinBox)
-
-        # --- Widgets dictionary ---
-        self.settings = {
-            'frame_rate': self.framerate_spinBox,
-            'exposure': self.exposure_spinBox,
-            'gain': self.gain_spinBox,
-            'gain_auto': self.autogain_checkBox,
-            'binning': self.binning_comboBox,
-            'acquisition_mode': self.mode_comboBox,
-            'n_frames': self.nframes_spinBox
-        }
-
-    def _toggle_gain_spinBox(self, state):
-        self.gain_spinBox.setEnabled(not state)
-
-    def _toggle_nframes_spinBox(self, text):
-        self.nframes_spinBox.setEnabled(text != "Continuous")
-
-    def _apply_settings(self):
-        for setting, widget in self.settings.items():
-            if not widget.isEnabled():
-                continue
-
-            if isinstance(widget, QSpinBox):
-                val = widget.value()
-            elif isinstance(widget, QComboBox):
-                val = widget.currentText()
-            elif isinstance(widget, QCheckBox):
-                val = widget.isChecked()
-            else:
-                continue
-            self.cam_handler.set_cam_param(setting, val)
-
-    def init_fields(self):
-        self.cam_handler.query_cam_params()
-        while not self.cam_handler.cam_param_get_flag.is_set():
-            time.sleep(0.01)
-        params = self.cam_handler.get_cam_params()
-        if params is None:
-            return
-
-        for setting, widget in self.settings.items():
-            is_setting_available = setting in params
-            widget.setEnabled(is_setting_available)
-            if not is_setting_available:
-                continue
-
-            value = params[setting]
-            if isinstance(widget, QSpinBox):
-                widget.setValue(value)
-            elif isinstance(widget, QComboBox):
-                widget.setCurrentText(value)
-            elif isinstance(widget, QCheckBox):
-                widget.setChecked(value)
-
-        self._toggle_gain_spinBox(self.autogain_checkBox.isChecked())
-        self._toggle_nframes_spinBox(self.mode_comboBox.currentText())
-
-    def _load_settings(self):
-        # Note: XML support can be added here if needed
-        fileName, _ = QFileDialog.getOpenFileName(
-            self, "Load Settings", "", "JSON Files (*.json)")
-        if fileName:
-            self.cam_handler.load_cam_settings(fileName)
-            self.init_fields()  # Refresh display
-
-    def _save_settings(self):
-        fileName, _ = QFileDialog.getSaveFileName(
-            self, "Save Settings", "", "JSON Files (*.json)")
-        if fileName:
-            self.cam_handler.save_cam_settings(fileName)
         

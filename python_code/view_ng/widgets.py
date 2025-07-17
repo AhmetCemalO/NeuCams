@@ -59,7 +59,7 @@ class PyCamsWindow(QMainWindow):
         uic.loadUi(join(dirpath, 'UI_pycams.ui'), self)
 
         # --- Logging Setup ---
-        self.log_message.connect(self.log_textEdit.append)
+        # self.log_message.connect(self.log_textEdit.append)
         handler = QtLogHandler(self)
         # Optional: Add formatting to the handler
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s',

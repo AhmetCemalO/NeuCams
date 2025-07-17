@@ -1,0 +1,9 @@
+{
+    "exposure": 1500,
+    "frame_rate": 10,
+    "gain": 8,
+    "gain_auto": false,
+    "acquisition_mode": "Continuous",
+    "n_frames": 1,
+    "triggered": false
+}

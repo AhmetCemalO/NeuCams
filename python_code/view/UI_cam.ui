@@ -30,86 +30,18 @@
     <number>2</number>
    </property>
    <item>
-    <widget class="QLabel" name="img_label">
-     <property name="text">
-      <string/>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="Line" name="line">
-     <property name="orientation">
-      <enum>Qt::Horizontal</enum>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <layout class="QHBoxLayout" name="horizontalLayout">
-     <property name="spacing">
-      <number>2</number>
-     </property>
-     <item>
-      <widget class="QPushButton" name="start_stop_pushButton">
-       <property name="text">
-        <string>Start</string>
-       </property>
-       <property name="checkable">
-        <bool>true</bool>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QCheckBox" name="record_checkBox">
-       <property name="text">
-        <string>Record</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <spacer name="horizontalSpacer">
-       <property name="orientation">
-        <enum>Qt::Horizontal</enum>
-       </property>
-       <property name="sizeHint" stdset="0">
-        <size>
-         <width>40</width>
-         <height>20</height>
-        </size>
-       </property>
-      </spacer>
-     </item>
-     <item>
-      <widget class="QLabel" name="frame_nr_label">
-       <property name="text">
-        <string>frame: 0</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QLabel" name="fps_label">
-       <property name="text">
-        <string>0.0 fps</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="camera_settings_pushButton">
-       <property name="text">
-        <string>Camera Settings</string>
-       </property>
-      </widget>
-     </item>
+    <layout class="QHBoxLayout" name="topButtonLayout">
      <item>
       <widget class="QPushButton" name="display_settings_pushButton">
        <property name="text">
-        <string>Display Settings</string>
+        <string>Display settings</string>
        </property>
       </widget>
      </item>
      <item>
       <widget class="QPushButton" name="image_processing_pushButton">
        <property name="text">
-        <string>Image Processing</string>
+        <string>Image processing</string>
        </property>
       </widget>
      </item>
@@ -124,6 +56,61 @@
      </property>
      <property name="text">
       <string>Filepath: </string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="controlLayout">
+     <item>
+      <widget class="QPushButton" name="start_stop_pushButton">
+       <property name="text">
+        <string>Start</string>
+       </property>
+       <property name="checkable">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="fps_label">
+       <property name="text">
+        <string>0.0 fps</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="frame_nr_label">
+       <property name="text">
+        <string>frame: 0</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QCheckBox" name="record_checkBox">
+       <property name="text">
+        <string>Record</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QCheckBox" name="remote_control_checkBox">
+       <property name="text">
+        <string>Remote Control</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="img_label">
+     <property name="text">
+      <string/>
+     </property>
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
      </property>
     </widget>
    </item>

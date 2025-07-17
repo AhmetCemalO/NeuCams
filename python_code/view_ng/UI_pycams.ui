@@ -28,17 +28,7 @@
      <number>0</number>
     </property>
     <item row="0" column="0">
-     <widget class="QSplitter" name="splitter">
-      <property name="orientation">
-       <enum>Qt::Vertical</enum>
-      </property>
-      <widget class="QMdiArea" name="mdiArea"/>
-      <widget class="QTextEdit" name="log_textEdit">
-       <property name="readOnly">
-        <bool>true</bool>
-       </property>
-      </widget>
-     </widget>
+     <widget class="QMdiArea" name="mdiArea"/>
     </item>
    </layout>
   </widget>
@@ -85,22 +75,4 @@
   </action>
  </widget>
  <resources/>
- <connections>
-  <connection>
-   <sender>splitter</sender>
-   <signal>splitterMoved(int,int)</signal>
-   <receiver>PyCams</receiver>
-   <slot>update</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>479</x>
-     <y>349</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>479</x>
-     <y>359</y>
-    </hint>
-   </hints>
-  </connection>
- </connections>
 </ui> 

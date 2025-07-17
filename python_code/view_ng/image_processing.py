@@ -66,20 +66,38 @@ class HistogramStretcher(ProcessingStage):
         return stretched.astype(img.dtype)
 
 
-class Subtractor(ProcessingStage):
-    """Subtracts a constant value from the image."""
-    def __init__(self, value=0):
-        self.value = value
+class BackgroundSubtractor(ProcessingStage):
+    """Subtracts the average of the last N frames (background) from the current image."""
+    def __init__(self, n_frames=10):
+        self.n_frames = n_frames
         self.enabled = False
+        self.buffer = []
+        self.background = None
 
-    def set_value(self, value):
-        self.value = value
+    def set_n_frames(self, n):
+        self.n_frames = max(1, int(n))
+        self.buffer = []  # Reset buffer when N changes
+        self.background = None
+
+    def reset(self):
+        self.buffer = []
+        self.background = None
 
     def apply(self, img: np.ndarray) -> np.ndarray:
-        if not self.enabled or self.value == 0:
+        if not self.enabled:
             return img
-        # Use cv2.subtract for safe handling of underflows (clips at 0)
-        return cv2.subtract(img, self.value)
+        # Add current frame to buffer
+        self.buffer.append(img.astype(np.float32))
+        if len(self.buffer) > self.n_frames:
+            self.buffer.pop(0)
+        # Compute background if enough frames
+        if len(self.buffer) == self.n_frames:
+            self.background = np.mean(self.buffer, axis=0)
+            result = cv2.subtract(img.astype(np.float32), self.background)
+            result = np.clip(result, 0, np.iinfo(img.dtype).max)
+            return result.astype(img.dtype)
+        else:
+            return img
 
 
 class GaussianBlur(ProcessingStage):

@@ -7,7 +7,7 @@ from PyQt5.QtCore import Qt
 
 from .image_processing import (HistogramStretcher, ImageFlipper,
                                ImageProcessingPipeline, ImageRotator,
-                               GaussianBlur, Subtractor)
+                               GaussianBlur, BackgroundSubtractor)
 
 @lru_cache(maxsize=1)
 def get_image_depth(dtype):
@@ -130,28 +130,35 @@ class ImageProcessingWidget(QWidget):
 
         # --- Stages ---
         self.blur_stage = GaussianBlur()
-        self.subtract_stage = Subtractor()
+        self.bg_subtract_stage = BackgroundSubtractor()
 
         # --- Connections ---
         self.groupBox.toggled.connect(self.toggle_blur)
         self.blur_kernel_size_spinBox.valueChanged.connect(self.set_blur_kernel)
 
-        self.groupBox_2.toggled.connect(self.toggle_subtract)
-        self.subtract_value_spinBox.valueChanged.connect(self.set_subtract_value)
+        self.groupBox_2.toggled.connect(self.toggle_bg_subtract)
+        self.n_frames_spinBox.valueChanged.connect(self.set_n_frames)
 
     def toggle_blur(self, enabled):
         self.blur_stage.enabled = enabled
 
     def set_blur_kernel(self, value):
+        # Ensure kernel size is at least 1 and odd
+        if value < 1:
+            value = 1
+
         self.blur_stage.set_kernel_size(value)
+        self.blur_kernel_size_spinBox.setValue(value)
 
-    def toggle_subtract(self, enabled):
-        self.subtract_stage.enabled = enabled
+    def toggle_bg_subtract(self, enabled):
+        self.bg_subtract_stage.enabled = enabled
+        if not enabled:
+            self.bg_subtract_stage.reset()
 
-    def set_subtract_value(self, value):
-        self.subtract_stage.set_value(value)
+    def set_n_frames(self, value):
+        self.bg_subtract_stage.set_n_frames(value)
 
     def add_to_pipeline(self, pipeline: ImageProcessingPipeline):
         """Adds the processing stages from this widget to a pipeline."""
         pipeline.add_stage(self.blur_stage)
-        pipeline.add_stage(self.subtract_stage) 
+        pipeline.add_stage(self.bg_subtract_stage)

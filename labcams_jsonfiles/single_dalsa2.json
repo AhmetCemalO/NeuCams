@@ -1,20 +1,22 @@
 {
     "cams": [
-        {"description": "malsa",
+    {
+        "description": "dalsa2",
         "type": "genicam",
         "name": "Nano-M1930(00:01:0D:C6:88:18)",
+        "driver": "genicam",
+        "serial_number": "H2260415",
         "params": {
             "exposure": 1500,
             "frame_rate": 30,
-            "gain": 4,
             "n_frames": 1,
             "binning": 1,
             "trigger_mode": "Off",
             "trigger_source": "Line1"
         },
-    "recorder_params": {
-        "recorder": "opencv",
-        "folder": "test2"
+        "recorder_params": {
+            "recorder": "opencv",
+            "folder": "test"
         }
     }
     ],
