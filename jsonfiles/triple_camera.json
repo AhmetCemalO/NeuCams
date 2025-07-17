@@ -2,7 +2,6 @@
     "cams": [
         {
             "description": "dalsa1",
-            "type": "genicam",
             "name": "Nano-M1930(00:01:0D:C6:88:10)",
             "driver": "genicam",
             "serial_number": "H2260407",
@@ -21,7 +20,6 @@
         },
         {
             "description": "dalsa2",
-            "type": "genicam",
             "name": "Nano-M1930(00:01:0D:C6:88:18)",
             "driver": "genicam",
             "serial_number": "H2260415",
@@ -40,7 +38,6 @@
         },
         {
             "description": "avt1",
-            "type": "avt",
             "name": "Mako G-040B(00:0f:31:5e:91:74)",
             "driver": "avt",
             "serial_number": "50-0537068788",

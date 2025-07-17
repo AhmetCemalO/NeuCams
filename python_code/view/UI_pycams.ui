@@ -6,15 +6,15 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>727</width>
-    <height>578</height>
+    <width>960</width>
+    <height>720</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>NeuCams</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <layout class="QHBoxLayout" name="horizontalLayout">
+   <layout class="QGridLayout" name="gridLayout">
     <property name="leftMargin">
      <number>0</number>
     </property>
@@ -27,12 +27,11 @@
     <property name="bottomMargin">
      <number>0</number>
     </property>
-    <item>
+    <item row="0" column="0">
      <widget class="QMdiArea" name="mdiArea"/>
     </item>
    </layout>
   </widget>
-  <widget class="QStatusBar" name="statusbar"/>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">
     <rect>
@@ -42,45 +41,38 @@
      <height>21</height>
     </rect>
    </property>
-   <widget class="QMenu" name="menuFile">
-    <property name="title">
-     <string>File</string>
-    </property>
-   </widget>
    <widget class="QMenu" name="menuView">
     <property name="title">
      <string>View</string>
     </property>
-    <addaction name="actionSubwindow_View"/>
-    <addaction name="actionTabbed_View"/>
-    <addaction name="separator"/>
-    <addaction name="actionCascade_View"/>
-    <addaction name="actionTile_View"/>
+    <addaction name="actionCascade"/>
+    <addaction name="actionTiled"/>
+    <addaction name="actionTabbed"/>
+    <addaction name="actionSubwindow"/>
    </widget>
-   <addaction name="menuFile"/>
    <addaction name="menuView"/>
   </widget>
-  <action name="actionSubwindow_View">
-   <property name="text">
-    <string>Subwindow View</string>
-   </property>
-  </action>
-  <action name="actionTabbed_View">
-   <property name="text">
-    <string>Tabbed View</string>
-   </property>
-  </action>
-  <action name="actionCascade_View">
+  <widget class="QStatusBar" name="statusbar"/>
+  <action name="actionCascade">
    <property name="text">
     <string>Cascade View</string>
    </property>
   </action>
-  <action name="actionTile_View">
+  <action name="actionTiled">
    <property name="text">
-    <string>Tile View</string>
+    <string>Tiled View</string>
+   </property>
+  </action>
+  <action name="actionSubwindow">
+   <property name="text">
+    <string>Subwindow View</string>
+   </property>
+  </action>
+  <action name="actionTabbed">
+   <property name="text">
+    <string>Tabbed View</string>
    </property>
   </action>
  </widget>
  <resources/>
- <connections/>
-</ui>
+</ui> 

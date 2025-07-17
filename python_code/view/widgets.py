@@ -1,152 +1,212 @@
 import sys
-from os import getcwd, path
 import os
-from os.path import join, dirname
-import numpy as np
-import cv2
 import time
+from os import getcwd, path
+from os.path import dirname, join
 from functools import lru_cache
-from collections import deque
-from PyQt5 import uic
-from PyQt5.QtGui import QImage, QPixmap, QIcon
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QMessageBox,
-                             QMdiSubWindow, QAction, QComboBox, QSpinBox,
-                             QCheckBox, QFileDialog)
-from PyQt5.QtCore import Qt, QTimer
+import logging
 
+import numpy as np
+from PyQt5 import uic
+from PyQt5.QtGui import QIcon, QPixmap
+from PyQt5.QtWidgets import (QAction, QApplication, QMainWindow, QMessageBox,
+                             QMdiSubWindow, QWidget)
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
+from collections import deque
+
+from .image_processing import (HistogramStretcher, ImageFlipper,
+                               ImageProcessingPipeline, ImageRotator)
 from udp_socket import UDPSocket
 from utils import display
 from camera_handler import CameraHandler
+
+# Re-use the existing CamWidget implementation (and its helpers) from the legacy GUI.
+from view.components import DisplaySettingsWidget, ImageProcessingWidget
+from view.base_widgets import BaseCameraWidget, nparray_to_qimg
 from cams.avt_cam import AVTCam
-from view_ng.components import DisplaySettingsWidget, ImageProcessingWidget
-from view_ng.base_widgets import BaseCameraWidget, nparray_to_qimg
 
+# -----------------------------------------------------------------------------
+# Paths
+# -----------------------------------------------------------------------------
 
-dirpath = dirname(path.realpath(__file__))
+dirpath = dirname(__file__)
+legacy_icon_path = join(dirname(dirpath), 'view', 'icon', 'pycams.png')
+
+# -----------------------------------------------------------------------------
+# Logging Handler for GUI
+# -----------------------------------------------------------------------------
+class QtLogHandler(logging.Handler):
+    """A custom logging handler that emits a signal for each log record."""
+    def __init__(self, parent):
+        super().__init__()
+        self.parent = parent
+
+    def emit(self, record):
+        msg = self.format(record)
+        self.parent.log_message.emit(msg)
 
 class PyCamsWindow(QMainWindow):
-    _udp_server_created = False
+    """Next-gen wrapper that loads the *new* main-window .ui while keeping the
+    proven backend logic from the legacy GUI.
+    """
+    log_message = pyqtSignal(str)
+    _udp_server_created = False  # Re-use the one-per-process server guard
 
-    def __init__(self, preferences = None):
+    def __init__(self, preferences=None, preinit_cam_handlers=None):
+        # Keep the same public API expected by the rest of the app
         self.preferences = preferences if preferences is not None else {}
-        
+
         super().__init__()
-        
+
+        # Load the *new* Qt Designer layout
         uic.loadUi(join(dirpath, 'UI_pycams.ui'), self)
-        
-        self.setWindowIcon(QIcon(dirpath + '/icon/pycams.png'))
-        
+
+        # --- Logging Setup ---
+        # self.log_message.connect(self.log_textEdit.append)
+        handler = QtLogHandler(self)
+        # Optional: Add formatting to the handler
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s',
+                                      datefmt='%H:%M:%S')
+        handler.setFormatter(formatter)
+        logging.getLogger().addHandler(handler)
+        logging.getLogger().setLevel(logging.INFO)
+
+        display("NeuCams started.")
+
+        # Reuse the existing icon so we do not need to copy the whole folder
+        # self.setWindowIcon(QIcon(legacy_icon_path))
+
+        # ------------------------------------------------------------------
+        # Camera widgets setup (logic copied from legacy implementation)
+        # ------------------------------------------------------------------
         self.cam_widgets = []
-        for cam in self.preferences.get('cams', []):
-            if cam['driver'] in ['avt', 'pco', 'genicam']:
-                self.setup_camera(cam)
-        
-        # Only create the UDP server once, not per camera
+        if preinit_cam_handlers is not None:
+            for cam, cam_handler in preinit_cam_handlers:
+                cam_handler.start()
+                widget = CamWidget(cam_handler)
+                self.cam_widgets.append(widget)
+                self._add_widget(cam.get('description'), widget)
+        else:
+            for cam in self.preferences.get('cams', []):
+                if cam.get('driver') in ['avt', 'pco', 'genicam']:
+                    self._setup_camera(cam)
+
+        # Arrange the camera windows in a grid
+        self.mdiArea.tileSubWindows()
+
+        # ------------------------------------------------------------------
+        # Optional UDP server (one per process)
+        # ------------------------------------------------------------------
         server_params = self.preferences.get('server_params', None)
-        if server_params is not None and not hasattr(PyCamsWindow, '_udp_server_created'):
-            server = server_params.get('server', None)
-            if server == "udp":
-                self.server = UDPSocket((server_params.get('server_ip', '0.0.0.0'), server_params.get('server_port', 9999)))
+        if (server_params is not None and
+                not hasattr(PyCamsWindow, '_udp_server_created')):
+            server_type = server_params.get('server', None)
+            if server_type == 'udp':
+                self.server = UDPSocket((server_params.get('server_ip', '0.0.0.0'),
+                                         server_params.get('server_port', 9999)))
                 self._timer = QTimer(self)
-                self._timer.timeout.connect(self.process_server_messages)
+                self._timer.timeout.connect(self._process_server_messages)
                 self._timer.start(server_params.get('server_refresh_time', 100))
-                PyCamsWindow._udp_server_created = True  # Mark as created
-        
+                PyCamsWindow._udp_server_created = True
+
+        # Misc UI initialisation
         self.mdiArea.setActivationOrder(1)
-        
-        self.menuView.triggered[QAction].connect(self.viewMenuActions)
-        
+        self.menuView.triggered[QAction].connect(self._view_menu_actions)
+
         self.show()
-    
-    def set_save_path(self, save_path):
-        if os.path.sep == '/': # Makes sure that the experiment name has the right slashes.
-            save_path = save_path.replace('\\',os.path.sep)
-        save_path = save_path.strip(' ')
-        for cam_widget in self.cam_widgets:
-            cam_widget.cam_handler.set_folder_path(save_path)
-        
-    def process_server_messages(self):
-        ret, msg, address = self.server.receive()
-        if ret:
-            action, *value = [i.lower() for i in msg.split('=')]
-            
-            if action == 'ping':
-                display(f'Server got pinged [{address}]')
-                self.server.send('pong',address)
-                
-            elif action == 'folder':
-                self.set_save_path(value)
-                display(f'Folder changed to {value} [{address}]')
-                self.server.send('ok=folder',address)
-                
-            elif action == 'start':
-                display(f'Starting triggered cameras [{address}]')
-                for cam_widget in self.cam_widgets:
-                    if cam_widget.is_triggered:
-                        cam_widget.start_cam()
-                self.server.send('ok=start',address)
-                
-            elif action == 'stop':
-                display(f'Stopping triggered cameras [{address}]')
-                for cam_widget in self.cam_widgets:
-                    if cam_widget.is_triggered:
-                        cam_widget.stop_cam()
-                self.server.send('ok=stop',address)
-                
-            elif action == 'done?':
-                cam_descr = value[0]
-                for cam_widget in self.cam_widgets:
-                    if cam_widget.cam_handler.cam_dict['description'] == cam_descr:
-                        display(f'Received status request from [{address}] \nCam {cam_descr} {action} status: {cam_widget.cam_handler.is_acquisition_done.is_set()}')
-                        self.server.send(f'done?={cam_widget.cam_handler.is_acquisition_done.is_set()}',address)
-                        return
-                self.server.send('done?=camera not found',address)
-            
-            elif action == 'quit':
-                display(f'Exiting [{address}]')
-                self.server.send('ok=bye',address)
-                self.close()
-        
-    def setup_camera(self, cam_dict):
+
+    # ------------------------------------------------------------------
+    # Legacy helpers copied / simplified from the original widgets.py
+    # ------------------------------------------------------------------
+
+    def _setup_camera(self, cam_dict):
         if 'settings_file' in cam_dict.get('params', {}):
-            cam_dict['params']['settings_file'] = join(dirname(getcwd()), 'configs', cam_dict['params']['settings_file'])
-        writer_dict = {**self.preferences.get('recorder_params', {}), **cam_dict.get('recorder_params', {})}
+            cam_dict['params']['settings_file'] = join(dirname(getcwd()),
+                                                       'configs',
+                                                       cam_dict['params']['settings_file'])
+        writer_dict = {**self.preferences.get('recorder_params', {}),
+                       **cam_dict.get('recorder_params', {})}
         cam_handler = CameraHandler(cam_dict, writer_dict)
         if cam_handler.camera_connected:
             cam_handler.start()
             widget = CamWidget(cam_handler)
             self.cam_widgets.append(widget)
-            self.setup_widget(cam_dict['description'], widget)
-        
-    def setup_widget(self, name, widget):
-        """
-        Adds the supplied widget with the supplied name in the main window
-        Checks if widget is already existing but hidden
+            self._add_widget(cam_dict['description'], widget)
 
-        :param name: Widget name in main window
-        :type name: string
-        :param widget: Widget
-        :type widget: QWidget
-        """
+    def _add_widget(self, name, widget):
         active_subwindows = [e.objectName() for e in self.mdiArea.subWindowList()]
         if name not in active_subwindows:
             subwindow = QMdiSubWindow(self.mdiArea)
             subwindow.setWindowTitle(name)
             subwindow.setObjectName(name)
             subwindow.setWidget(widget)
-            subwindow.resize(widget.minimumSize().width() + 40,widget.minimumSize().height() + 40)
+            subwindow.resize(widget.minimumSize().width() + 40,
+                             widget.minimumSize().height() + 40)
             subwindow.show()
             subwindow.setProperty("center", True)
         else:
             widget.show()
-    
-    def viewMenuActions(self,q):
-        """
-        Handles the click event from the View menu.
 
-        :param q:
-        :type q: QAction
-        """
+    # ------------------------------------------------------------------
+    # UDP helper
+    # ------------------------------------------------------------------
+
+    def _process_server_messages(self):
+        ret, msg, address = self.server.receive()
+        if not ret:
+            return
+
+        action, *value = [i.lower() for i in msg.split('=')]
+
+        if action == 'ping':
+            display(f'Server got pinged [{address}]')
+            self.server.send('pong', address)
+
+        elif action == 'folder':
+            self._set_save_path(value)
+            display(f'Folder changed to {value} [{address}]')
+            self.server.send('ok=folder', address)
+
+        elif action == 'start':
+            display(f'Starting triggered cameras [{address}]')
+            for cam_widget in self.cam_widgets:
+                if getattr(cam_widget, 'is_triggered', False):
+                    cam_widget.start_cam()
+            self.server.send('ok=start', address)
+
+        elif action == 'stop':
+            display(f'Stopping triggered cameras [{address}]')
+            for cam_widget in self.cam_widgets:
+                if getattr(cam_widget, 'is_triggered', False):
+                    cam_widget.stop_cam()
+            self.server.send('ok=stop', address)
+
+        elif action == 'done?':
+            cam_descr = value[0] if value else ''
+            for cam_widget in self.cam_widgets:
+                if cam_widget.cam_handler.cam_dict.get('description') == cam_descr:
+                    status = cam_widget.cam_handler.is_acquisition_done.is_set()
+                    self.server.send(f'done?={status}', address)
+                    return
+            self.server.send('done?=camera not found', address)
+
+        elif action == 'quit':
+            display(f'Exiting [{address}]')
+            self.server.send('ok=bye', address)
+            self.close()
+
+    # ------------------------------------------------------------------
+    # Utility helpers (unchanged)
+    # ------------------------------------------------------------------
+
+    def _set_save_path(self, save_path):
+        if os.path.sep == '/':
+            save_path = save_path.replace('\\', os.path.sep)
+        save_path = save_path.strip(' ')
+        for cam_widget in self.cam_widgets:
+            cam_widget.cam_handler.set_folder_path(save_path)
+
+    def _view_menu_actions(self, q):
         if q.text() == 'Subwindow View':
             self.mdiArea.setViewMode(0)
         if q.text() == 'Tabbed View':
@@ -157,15 +217,15 @@ class PyCamsWindow(QMainWindow):
         elif q.text() == 'Tile View':
             self.mdiArea.setViewMode(0)
             self.mdiArea.tileSubWindows()
-    
-    def closeEvent(self, event):
-        """
-        Handles the click event from the top right X to close.
-        Asks for confirmation before it does.
-        """
-        reply = QMessageBox.question(self, 'Window Close', 'Are you sure you want to close the window?',
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
+    # ------------------------------------------------------------------
+    # Graceful shutdown
+    # ------------------------------------------------------------------
+
+    def closeEvent(self, event):
+        reply = QMessageBox.question(self, 'Window Close',
+                                     'Are you sure you want to close the window?',
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply == QMessageBox.Yes:
             event.accept()
             self.close()
@@ -173,16 +233,12 @@ class PyCamsWindow(QMainWindow):
             event.ignore()
 
     def close(self):
-        """
-        Clean up non GUI objects
-        """
         for cam_widget in self.cam_widgets:
             cam_widget.cam_handler.close()
         time.sleep(0.5)
         display("PyCams out, bye!")
         QApplication.quit()
-        sys.exit()
-
+        sys.exit() 
 
 class CamWidget(BaseCameraWidget):
     def __init__(self, cam_handler=None):
@@ -203,24 +259,16 @@ class CamWidget(BaseCameraWidget):
         self.img_processing_settings = ImageProcessingWidget(self)
 
         # --- Image processing pipeline ---
-        # The new stages from the ImageProcessingWidget should be inserted
-        # at the beginning of the pipeline, before the contrast stretcher.
         if hasattr(self.display_settings, 'pipeline'):
             pipeline = self.display_settings.pipeline
-            # This is a bit of a hack; a better design would be a dedicated
-            # pipeline manager class. For now, we manually insert at the start.
             pipeline.stages.insert(0, self.img_processing_settings.bg_subtract_stage)
             pipeline.stages.insert(0, self.img_processing_settings.blur_stage)
 
     def _update(self):
         if self.cam_handler is None:
             return
-
-        # Update file path display
         dest = self.cam_handler.get_filepath()
         self.save_location_label.setText('Filepath: ' + dest)
-
-        # Process new image if available
         if self.frame_nr != self.cam_handler.total_frames.value:
             img = self.cam_handler.get_image()
             if isinstance(img, tuple) and len(img) == 3 and isinstance(img[0], str):
@@ -232,17 +280,11 @@ class CamWidget(BaseCameraWidget):
             self.original_img = np.copy(img)
             self.is_img_processed = False
             self.frame_nr = self.cam_handler.total_frames.value
-
-        # Update FPS and frame count labels
         self._update_stats()
-
-        # Update camera state (e.g., start/stop button text)
         if self.cam_handler.start_trigger.is_set() and not self.cam_handler.stop_trigger.is_set():
             self._set_stop_text()
         else:
             self._set_start_text()
-
-        # Update image display
         if self.display_settings.isVisible():
             self.is_img_processed = False
         self._update_img()
@@ -253,8 +295,7 @@ class CamWidget(BaseCameraWidget):
         current_frame = self.cam_handler.total_frames.value
         dt = current_time - self._prev_time
         df = current_frame - self._prev_frame_nr
-
-        if dt >= 0.5 and df > 0: # Update more frequently
+        if dt >= 0.5 and df > 0:
             fps = df / dt
             self._fps_deque.append(fps)
             avg_fps = np.mean(self._fps_deque)
@@ -268,7 +309,6 @@ class CamWidget(BaseCameraWidget):
             if not self.is_img_processed:
                 self.processed_img = self.display_settings.process_img(self.original_img)
                 self.is_img_processed = True
-            
             pixmap = QPixmap(nparray_to_qimg(self.processed_img))
             pixmap = pixmap.scaled(self.img_label.width(), self.img_label.height(),
                                    self.AR_policy, Qt.FastTransformation)
@@ -298,7 +338,6 @@ class CamWidget(BaseCameraWidget):
 
     def _toggle_display_settings(self):
         self.display_settings.setVisible(not self.display_settings.isVisible())
-        
+
     def _toggle_img_processing_settings(self):
-        self.img_processing_settings.setVisible(not self.img_processing_settings.isVisible())
-        
+        self.img_processing_settings.setVisible(not self.img_processing_settings.isVisible()) 
