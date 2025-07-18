@@ -7,7 +7,7 @@ from vmbpy import (
     VmbFeatureError, VmbTimeout,
 )
 from .generic_cam import GenericCam
-from utils import display
+from NeuCams.utils import display
 
 
 # ----------------------------------------------------------------------
@@ -250,3 +250,18 @@ class AVTCam(GenericCam):
 
     # alias for GenericCam compatibility
     close = stop
+
+    def _init_format(self):
+        frame, _ = self.image()
+        # Handle shared memory tuple from AVT
+        if isinstance(frame, tuple) and len(frame) == 3 and isinstance(frame[0], str):
+            shm_name, shape, dtype = frame
+            frame, shm = AVTCam.frame_from_shm(shm_name, shape, dtype)
+            frame = np.array(frame, copy=True)
+            shm.close()
+            shm.unlink()
+        if frame is not None:
+            self.format['height'] = frame.shape[0]
+            self.format['width'] = frame.shape[1]
+            self.format['n_chan'] = frame.shape[2] if frame.ndim == 3 else 1
+            display(f"{self.name} - size: {self.format['height']} x {self.format['width']}")

@@ -3,7 +3,7 @@ import yaml
 import json
 
 # Load environment.yml dependencies
-with open('environment.yml', 'r') as f:
+with open('requirementsold.txt', 'r') as f:
     env = yaml.safe_load(f)
 
 yml_pkgs = set()
@@ -24,7 +24,7 @@ installed_pkgs = set(pkg['name'].lower() for pkg in installed)
 # Find extras
 extras = installed_pkgs - yml_pkgs
 
-print('Packages installed but not in environment.yml:')
+print('Packages installed but not in requirementsold.txt:')
 for pkg in sorted(extras):
     print('  ', pkg)
 

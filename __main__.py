@@ -1,9 +1,9 @@
 import sys
 from argparse import ArgumentParser
 from PyQt5.QtWidgets import QApplication
-from view.widgets import PyCamsWindow
-from view.launcher import SplashWindow
-from utils import get_preferences, display
+from NeuCams.view.widgets import PyCamsWindow
+from NeuCams.view.launcher import SplashWindow
+from NeuCams.utils import get_preferences, display
 
 def main():
     parser = ArgumentParser(description='Labcams: multiple camera control and recording.')

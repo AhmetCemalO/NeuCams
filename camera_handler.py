@@ -6,10 +6,10 @@ import time
 import datetime
 from os.path import dirname, join
 import json
-from file_writer import BinaryWriter, TiffWriter, FFMPEGWriter, OpenCVWriter
-from utils import display, resolve_cam_id_by_serial
+from NeuCams.file_writer import BinaryWriter, TiffWriter, FFMPEGWriter, OpenCVWriter
+from NeuCams.utils import display, resolve_cam_id_by_serial
 from importlib import import_module
-from cams.avt_cam import AVTCam
+from NeuCams.cams.avt_cam import AVTCam
 # from cams.pco_cam import PCOCam
 # from cams.genicam import GenICam
 
@@ -33,7 +33,7 @@ class CameraFactory:
         if driver not in CameraFactory.cameras:
             raise ValueError(f"Unknown camera driver: {driver}")
         module_name, class_name = CameraFactory.cameras[driver]
-        module = import_module(module_name, package='python_code')
+        module = import_module(f'NeuCams.{module_name}')
         cam_class = getattr(module, class_name)
         return cam_class(cam_id=cam_id, params=params)
 

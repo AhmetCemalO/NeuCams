@@ -4,7 +4,7 @@ import time
 import numpy as np
 
 from .components import DisplaySettingsWidget
-from cams.avt_cam import AVTCam
+from NeuCams.cams.avt_cam import AVTCam
 
 def nparray_to_qimg(img):
     if len(img.shape) == 2:

@@ -5,7 +5,7 @@ import time
 import ctypes
 
 import numpy as np
-from utils import display
+from NeuCams.utils import display
 
 
 class GenericCam:
@@ -27,18 +27,11 @@ class GenericCam:
     
     def _init_format(self):
         frame, _ = self.image()
-        # Handle shared memory tuple from AVT
-        if isinstance(frame, tuple) and len(frame) == 3 and isinstance(frame[0], str):
-            from cams.avt_cam import AVTCam  # <-- move import here
-            shm_name, shape, dtype = frame
-            frame, shm = AVTCam.frame_from_shm(shm_name, shape, dtype)
-            frame = np.array(frame, copy=True)
-            shm.close()
-            shm.unlink()
-        self.format['height'] = frame.shape[0]
-        self.format['width'] = frame.shape[1]
-        self.format['n_chan'] = frame.shape[2] if frame.ndim == 3 else 1
-        display(f"{self.name} - size: {self.format['height']} x {self.format['width']}")
+        if frame is not None:
+            self.format['height'] = frame.shape[0]
+            self.format['width'] = frame.shape[1]
+            self.format['n_chan'] = frame.shape[2] if frame.ndim == 3 else 1
+            display(f"{self.name} - size: {self.format['height']} x {self.format['width']}")
     
     def is_connected(self):
         pass

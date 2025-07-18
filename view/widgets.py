@@ -16,14 +16,14 @@ from collections import deque
 
 from .image_processing import (HistogramStretcher, ImageFlipper,
                                ImageProcessingPipeline, ImageRotator)
-from udp_socket import UDPSocket
-from utils import display
-from camera_handler import CameraHandler
+from NeuCams.udp_socket import UDPSocket
+from NeuCams.utils import display
+from NeuCams.camera_handler import CameraHandler
 
 # Re-use the existing CamWidget implementation (and its helpers) from the legacy GUI.
-from view.components import DisplaySettingsWidget, ImageProcessingWidget
-from view.base_widgets import BaseCameraWidget, nparray_to_qimg
-from cams.avt_cam import AVTCam
+from NeuCams.view.components import DisplaySettingsWidget, ImageProcessingWidget
+from NeuCams.view.base_widgets import BaseCameraWidget, nparray_to_qimg
+from NeuCams.cams.avt_cam import AVTCam
 
 # -----------------------------------------------------------------------------
 # Paths

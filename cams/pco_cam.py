@@ -6,8 +6,8 @@ try:
     import pco
 except ImportError:
     pco = None
-from cams.generic_cam import GenericCam
-from utils import display
+from NeuCams.cams.generic_cam import GenericCam
+from NeuCams.utils import display
 
 class PCOCam(GenericCam):
     def __init__(self, cam_id = None, params = None, format = None):

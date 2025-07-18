@@ -10,8 +10,8 @@ import numpy as np
 from tifffile import imread, TiffFile, TiffWriter as twriter
 from skvideo.io import FFmpegWriter
 import cv2
-from utils import display
-from cams.avt_cam import AVTCam
+from NeuCams.utils import display
+from NeuCams.cams.avt_cam import AVTCam
 from multiprocessing import shared_memory
 
 VERSION = 'B0.6'

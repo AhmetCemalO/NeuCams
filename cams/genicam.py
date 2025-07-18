@@ -6,7 +6,7 @@ try:
 except ImportError:
     Harvester = None
 from .generic_cam import GenericCam
-from utils import display
+from NeuCams.utils import display
 
 def get_gentl_producer_path():
     gen_tl_producer_path = ''
